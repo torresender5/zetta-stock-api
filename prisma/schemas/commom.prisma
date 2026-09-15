@@ -1,47 +1,41 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 model User {
-  id    Int    @id @default(autoincrement())
-  user  String
-  email String @unique
-  password String 
-  person Person[]
+  id        Int      @id @default(autoincrement())
+  user      String
+  email     String   @unique
+  password  String
   createdAt DateTime @default(now())
+  person    Person[]
 }
 
 model Posts {
-  id    Int    @id @default(autoincrement())
-  description  String
-  title String
-  createdAt DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  description String
+  title       String
+  createdAt   DateTime @default(now())
 }
 
 model Person {
-  id    Int    @id @default(autoincrement())
-  name  String
-  secondName  String
-  lastName  String
-  secondLastName  String
-  phoneNumber   String
-  address String
-  user  User?   @relation(fields: [userId], references: [id])
-  userId Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now())
+  id             Int      @id @default(autoincrement())
+  name           String
+  secondName     String
+  lastName       String
+  secondLastName String
+  phoneNumber    String
+  address        String
+  userId         Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id])
 }
 
 model Company {
-  id    Int    @id @default(autoincrement())
-  name  String
-  description  String
-  phoneNumber   String
-  address String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String
+  phoneNumber String
+  address     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now())
 }
 
 model Category {

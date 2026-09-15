@@ -1,0 +1,44 @@
+model Sale {
+  id            Int         @id @default(autoincrement())
+  clientId      Int
+  client        Client      @relation(fields: [clientId], references: [id])
+  date          DateTime
+  subtotal      Float
+  tax           Float
+  total         Float
+  paymentStatus String      @default("pending")
+  createdAt     DateTime    @default(now())
+  items         SaleItem[]
+  invoice       Invoice?
+}
+
+model SaleItem {
+  id          Int    @id @default(autoincrement())
+  saleId      Int
+  sale        Sale   @relation(fields: [saleId], references: [id])
+  productId   Int
+  product     Product @relation(fields: [productId], references: [id])
+  productName String
+  size        String?
+  quantity    Int
+  unitPrice   Float
+  subtotal    Float
+}
+
+model Invoice {
+  id              Int    @id @default(autoincrement())
+  invoiceNumber   String @unique
+  saleId          Int    @unique
+  sale            Sale   @relation(fields: [saleId], references: [id])
+  clientId        Int
+  client          Client @relation(fields: [clientId], references: [id])
+  clientName      String
+  clientDocument  String
+  clientAddress   String
+  date            DateTime
+  subtotal        Float
+  tax             Float
+  total           Float
+  status          String @default("pending")
+  createdAt       DateTime @default(now())
+}

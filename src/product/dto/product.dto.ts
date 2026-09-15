@@ -1,8 +1,21 @@
 import { ApiProperty, ApiSchema } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEmail, IsNumber} from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsArray, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+import { PartialType } from '@nestjs/swagger';
+
+export class ProductSizeDto {
+    @ApiProperty({ description: 'Size label (e.g. S, M, L, 38)' })
+    @IsString()
+    size: string;
+
+    @ApiProperty({ description: 'Stock available for this size' })
+    @IsOptional()
+    @IsNumber()
+    stock?: number;
+}
 
 
-@ApiSchema({ name: 'Create' })
+@ApiSchema({ name: 'CreateProduct' })
 export class ProductCreateDto {
 
     @ApiProperty({ description: 'Product Name' })
@@ -10,7 +23,7 @@ export class ProductCreateDto {
     name: string;
 
     @ApiProperty({ description: 'Product Description' })
-    // @IsOptional()
+    @IsOptional()
     @IsString()
     description: string;
 
@@ -18,9 +31,13 @@ export class ProductCreateDto {
     @IsString()
     code: string;
 
-    @ApiProperty({ description: 'Product Price' })
+    @ApiProperty({ description: 'Product Purchase Price' })
     @IsNumber()
-    price: number;
+    purchasePrice: number;
+
+    @ApiProperty({ description: 'Product Sale Price' })
+    @IsNumber()
+    salePrice: number;
 
     @ApiProperty({ description: 'Product Stock' })
     @IsNumber()
@@ -37,4 +54,18 @@ export class ProductCreateDto {
     @ApiProperty({ description: 'Product Category' })
     @IsString()
     category: string;
+
+    @ApiProperty({ description: 'Product Image URL' })
+    @IsOptional()
+    @IsString()
+    image: string;
+
+    @ApiProperty({ description: 'Product sizes with stock per size', type: [ProductSizeDto] })
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => ProductSizeDto)
+    sizes: ProductSizeDto[];
 }
+
+export class UpdateProductDto extends PartialType(ProductCreateDto) {}

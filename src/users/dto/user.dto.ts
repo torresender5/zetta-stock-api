@@ -2,7 +2,7 @@ import { ApiProperty, ApiSchema } from '@nestjs/swagger';
 import { IsString, IsOptional, IsEmail} from 'class-validator';
 
 
-@ApiSchema({ name: 'Create' })
+@ApiSchema({ name: 'CreateUser' })
 export class UserCreateDto {
     @ApiProperty({ description: 'Email' })
     @IsEmail()

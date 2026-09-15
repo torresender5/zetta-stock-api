@@ -1,0 +1,10 @@
+model Supplier {
+  id        Int            @id @default(autoincrement())
+  name      String
+  document  String   @unique
+  email     String
+  phone     String
+  address   String
+  createdAt DateTime       @default(now())
+  purchases Purchase[]
+}

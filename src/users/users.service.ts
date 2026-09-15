@@ -34,10 +34,11 @@ export class UsersService {
 
   async createUser(data: { user: string; email: string, password:string }) {
     try{
+      console.log('Creating user with data:', data);
       return this.prisma.user.create({data});
     } catch (error) {
       // ERROR LOG
-    }
+      console.error('Error creating user:', error); }
   }
         
   async findByEmail(email: string): Promise<Users | undefined | null> {
@@ -58,3 +59,4 @@ export class UsersService {
         
         
 }
+

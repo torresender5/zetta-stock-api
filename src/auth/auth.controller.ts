@@ -18,7 +18,9 @@ export class AuthController {
     @HttpCode(HttpStatus.OK)
     @Post('register')
     register(@Body() signInDto: RegisterDto) {
+        console.log('Register DTO:', signInDto);
         this.logger.info('Starting register function')
+        console.log('Register DTO:', signInDto);
         return this.authService.register(signInDto);
     }
 }
