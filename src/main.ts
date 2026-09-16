@@ -1,30 +1,21 @@
-import { ValidationPipe, ConsoleLogger } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { WinstonModule } from 'nest-winston';
 import { winstonConfig } from './config/winston.config';
-import { NestExpressApplication } from '@nestjs/platform-express';
-import { join } from 'path';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule,{
+  const app = await NestFactory.create(AppModule, {
     logger: WinstonModule.createLogger(winstonConfig),
-    // logger: new ConsoleLogger({
-    //   prefix: 'NEST API',
-    //   json: false,
-    // }),
   });
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true, // Remove properties not defined in the DTO
-    transform: true, // Automatically transform plain objects to DTO instances
-    forbidNonWhitelisted: true, // Throw an error if non-whitelisted properties are present
-  }));
-
-  const uploadDir = process.env.UPLOAD_DIR || './uploads/products';
-  app.useStaticAssets(join(__dirname, '..', uploadDir), {
-    prefix: '/uploads/products',
-  });
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true, // Remove properties not defined in the DTO
+      transform: true, // Automatically transform plain objects to DTO instances
+      forbidNonWhitelisted: true, // Throw an error if non-whitelisted properties are present
+    }),
+  );
 
   app.enableCors({
     origin: 'http://localhost:5173', // Specify the exact origin of your frontend

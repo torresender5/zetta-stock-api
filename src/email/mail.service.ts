@@ -14,14 +14,20 @@ export class MailService {
       // from: '"Support Team" <support@example.com>', // override default from
       subject: 'Welcome to Nice App! Confirm your Email',
       template: './confirmation', // `.hbs` extension is appended automatically
-      context: { // ✏️ filling curly brackets with content
+      context: {
+        // ✏️ filling curly brackets with content
         name: 'Ender Torres',
         url,
       },
     });
   }
 
-  async sendEmail(email: string, subject: string, templatePath: string, context: object) {
+  async sendEmail(
+    email: string,
+    subject: string,
+    templatePath: string,
+    context: object,
+  ) {
     // const url = `example.com/auth/confirm?token=${token}`;
 
     await this.mailerService.sendMail({
@@ -29,8 +35,9 @@ export class MailService {
       // from: '"Support Team" <support@example.com>', // override default from
       subject: subject,
       template: templatePath, // `.hbs` extension is appended automatically
-      context: { // ✏️ filling curly brackets with content
-        ...context
+      context: {
+        // ✏️ filling curly brackets with content
+        ...context,
       },
     });
   }

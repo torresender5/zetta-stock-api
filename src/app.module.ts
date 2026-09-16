@@ -12,7 +12,16 @@ import { SaleModule } from './sale/sale.module';
 import { PurchaseModule } from './purchase/purchase.module';
 
 @Module({
-  imports: [UsersModule, AuthModule, WinstonModule.forRoot(winstonConfig), ProductModule, ClientsModule, SupplierModule, SaleModule, PurchaseModule],
+  imports: [
+    UsersModule,
+    AuthModule,
+    WinstonModule.forRoot(winstonConfig),
+    ProductModule,
+    ClientsModule,
+    SupplierModule,
+    SaleModule,
+    PurchaseModule,
+  ],
   controllers: [],
   providers: [PrismaService],
 })

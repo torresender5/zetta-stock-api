@@ -6,4 +6,4 @@ import { AnyAuthGuard } from './any-auth.guard';
  * Protege el endpoint aceptando JWT o Basic Auth (UserAdmin).
  */
 export const Auth = () =>
-    applyDecorators(UseGuards(AnyAuthGuard), ApiBearerAuth(), ApiBasicAuth());
+  applyDecorators(UseGuards(AnyAuthGuard), ApiBearerAuth(), ApiBasicAuth());
