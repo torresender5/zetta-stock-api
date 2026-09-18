@@ -1,5 +1,7 @@
 model Sale {
   id            Int         @id @default(autoincrement())
+  companyId     Int?
+  company       Company?    @relation(fields: [companyId], references: [id])
   clientId      Int
   client        Client      @relation(fields: [clientId], references: [id])
   date          DateTime
@@ -26,12 +28,14 @@ model SaleItem {
 }
 
 model Invoice {
-  id              Int    @id @default(autoincrement())
-  invoiceNumber   String @unique
-  saleId          Int    @unique
-  sale            Sale   @relation(fields: [saleId], references: [id])
+  id              Int      @id @default(autoincrement())
+  companyId       Int?
+  company         Company? @relation(fields: [companyId], references: [id])
+  invoiceNumber   String
+  saleId          Int      @unique
+  sale            Sale     @relation(fields: [saleId], references: [id])
   clientId        Int
-  client          Client @relation(fields: [clientId], references: [id])
+  client          Client   @relation(fields: [clientId], references: [id])
   clientName      String
   clientDocument  String
   clientAddress   String
@@ -39,6 +43,8 @@ model Invoice {
   subtotal        Float
   tax             Float
   total           Float
-  status          String @default("pending")
+  status          String   @default("pending")
   createdAt       DateTime @default(now())
+
+  @@unique([companyId, invoiceNumber])
 }

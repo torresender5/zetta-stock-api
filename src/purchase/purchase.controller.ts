@@ -3,14 +3,15 @@ import {
   Get,
   Post,
   Patch,
-  UseGuards,
   HttpCode,
   HttpStatus,
   Body,
   Param,
   Inject,
+  Req,
 } from '@nestjs/common';
-import { AuthGuard } from '../auth/auth.guard';
+import { AuthRoles } from '../auth/auth-roles.decorator';
+import { AuthUserPayload } from '../auth/auth-user.interface';
 import { PurchaseService } from './purchase.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
@@ -26,35 +27,42 @@ export class PurchaseController {
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
   ) {}
 
-  @UseGuards(AuthGuard)
+  @AuthRoles('admin', 'inventario')
   @Get()
-  findAll() {
+  findAll(@Req() req: Request & { user: AuthUserPayload }) {
     this.logger.info('Starting PurchaseController find all');
-    return this.purchaseService.findAll();
+    return this.purchaseService.findAll(req.user?.companyId);
   }
 
-  @UseGuards(AuthGuard)
+  @AuthRoles('admin', 'inventario')
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  findOne(
+    @Param('id') id: string,
+    @Req() req: Request & { user: AuthUserPayload },
+  ) {
     const purchaseId = parseInt(id, 10);
     this.logger.info(`Starting PurchaseController find By ID: ${purchaseId}`);
-    return this.purchaseService.findById(purchaseId);
+    return this.purchaseService.findById(purchaseId, req.user?.companyId);
   }
 
-  @UseGuards(AuthGuard)
+  @AuthRoles('admin', 'inventario')
   @HttpCode(HttpStatus.OK)
   @Post()
-  create(@Body() data: CreatePurchaseDto) {
+  create(
+    @Body() data: CreatePurchaseDto,
+    @Req() req: Request & { user: AuthUserPayload },
+  ) {
     this.logger.info('Starting PurchaseController Create Purchase');
-    return this.purchaseService.create(data);
+    return this.purchaseService.create(data, req.user?.companyId);
   }
 
-  @UseGuards(AuthGuard)
+  @AuthRoles('admin', 'inventario')
   @HttpCode(HttpStatus.OK)
   @Patch(':id')
   updatePaymentStatus(
     @Param('id') id: string,
     @Body() data: UpdatePurchasePaymentStatusDto,
+    @Req() req: Request & { user: AuthUserPayload },
   ) {
     const purchaseId = parseInt(id, 10);
     this.logger.info(
@@ -63,6 +71,7 @@ export class PurchaseController {
     return this.purchaseService.updatePaymentStatus(
       purchaseId,
       data.paymentStatus,
+      req.user?.companyId,
     );
   }
 }

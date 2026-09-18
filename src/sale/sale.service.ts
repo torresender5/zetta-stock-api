@@ -10,9 +10,10 @@ export class SaleService {
     private prisma: PrismaService,
   ) {}
 
-  async findAll() {
+  async findAll(companyId?: number) {
     this.logger.info('Starting SaleService findAll');
     return this.prisma.sale.findMany({
+      where: companyId ? { companyId } : {},
       include: {
         items: true,
         client: true,
@@ -21,11 +22,11 @@ export class SaleService {
     });
   }
 
-  async findById(id: number) {
+  async findById(id: number, companyId?: number) {
     this.logger.info(`Finding sale by ID: ${id}`);
     try {
-      const result = await this.prisma.sale.findUnique({
-        where: { id },
+      const result = await this.prisma.sale.findFirst({
+        where: { id, ...(companyId ? { companyId } : {}) },
         include: {
           items: true,
           client: true,
@@ -39,17 +40,33 @@ export class SaleService {
     }
   }
 
-  async create(data: any) {
+  async create(data: any, companyId?: number) {
     try {
       this.logger.info('Creating sale:', { clientId: data.clientId });
 
-      // Get client info for invoice
-      const client = await this.prisma.client.findUnique({
-        where: { id: Number(data.clientId) },
+      // Get client info for invoice (must belong to same company)
+      const client = await this.prisma.client.findFirst({
+        where: {
+          id: Number(data.clientId),
+          ...(companyId ? { companyId } : {}),
+        },
       });
 
       if (!client) {
         throw new Error('Client not found');
+      }
+
+      // Verify all products belong to the same company
+      for (const item of data.items) {
+        const product = await this.prisma.product.findFirst({
+          where: {
+            id: Number(item.productId),
+            ...(companyId ? { companyId } : {}),
+          },
+        });
+        if (!product) {
+          throw new Error(`Product ${item.productId} not found`);
+        }
       }
 
       // Calculate totals
@@ -70,6 +87,7 @@ export class SaleService {
         // Create the sale
         const sale = await tx.sale.create({
           data: {
+            companyId,
             clientId: Number(data.clientId),
             date: new Date(data.date),
             subtotal,
@@ -98,6 +116,7 @@ export class SaleService {
           data: {
             invoiceNumber,
             saleId: sale.id,
+            companyId,
             clientId: Number(data.clientId),
             clientName: client.name,
             clientDocument: client.document,
@@ -112,6 +131,15 @@ export class SaleService {
 
         // Update product stock
         for (const item of data.items) {
+          const product = await tx.product.findFirst({
+            where: {
+              id: Number(item.productId),
+              ...(companyId ? { companyId } : {}),
+            },
+          });
+          if (!product) {
+            throw new Error(`Product ${item.productId} not found`);
+          }
           await tx.product.update({
             where: { id: Number(item.productId) },
             data: {
@@ -132,9 +160,19 @@ export class SaleService {
     }
   }
 
-  async updatePaymentStatus(id: number, paymentStatus: string) {
+  async updatePaymentStatus(
+    id: number,
+    paymentStatus: string,
+    companyId?: number,
+  ) {
     try {
       this.logger.info(`Updating sale payment status: ${id}`);
+      const existing = await this.prisma.sale.findFirst({
+        where: { id, ...(companyId ? { companyId } : {}) },
+      });
+      if (!existing) {
+        throw new Error('Venta no encontrada');
+      }
       const sale = await this.prisma.sale.update({
         where: { id },
         data: { paymentStatus },
@@ -145,8 +183,8 @@ export class SaleService {
       });
 
       // Also update the invoice status
-      await this.prisma.invoice.update({
-        where: { saleId: id },
+      await this.prisma.invoice.updateMany({
+        where: { saleId: id, ...(companyId ? { companyId } : {}) },
         data: { status: paymentStatus },
       });
 
@@ -157,9 +195,10 @@ export class SaleService {
     }
   }
 
-  async findAllInvoices() {
+  async findAllInvoices(companyId?: number) {
     this.logger.info('Starting SaleService findAllInvoices');
     return this.prisma.invoice.findMany({
+      where: companyId ? { companyId } : {},
       include: {
         sale: {
           include: {
@@ -171,17 +210,23 @@ export class SaleService {
     });
   }
 
-  async updateInvoiceStatus(id: number, status: string) {
+  async updateInvoiceStatus(id: number, status: string, companyId?: number) {
     try {
       this.logger.info(`Updating invoice status: ${id}`);
+      const existing = await this.prisma.invoice.findFirst({
+        where: { id, ...(companyId ? { companyId } : {}) },
+      });
+      if (!existing) {
+        throw new Error('Factura no encontrada');
+      }
       const invoice = await this.prisma.invoice.update({
         where: { id },
         data: { status },
       });
 
       // Also update the sale payment status
-      await this.prisma.sale.update({
-        where: { id: invoice.saleId },
+      await this.prisma.sale.updateMany({
+        where: { id: invoice.saleId, ...(companyId ? { companyId } : {}) },
         data: { paymentStatus: status },
       });
 

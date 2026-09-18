@@ -10,9 +10,10 @@ export class PurchaseService {
     private prisma: PrismaService,
   ) {}
 
-  async findAll() {
+  async findAll(companyId?: number) {
     this.logger.info('Starting PurchaseService findAll');
     return this.prisma.purchase.findMany({
+      where: companyId ? { companyId } : {},
       include: {
         items: true,
         supplier: true,
@@ -21,11 +22,11 @@ export class PurchaseService {
     });
   }
 
-  async findById(id: number) {
+  async findById(id: number, companyId?: number) {
     this.logger.info(`Finding purchase by ID: ${id}`);
     try {
-      const result = await this.prisma.purchase.findUnique({
-        where: { id },
+      const result = await this.prisma.purchase.findFirst({
+        where: { id, ...(companyId ? { companyId } : {}) },
         include: {
           items: true,
           supplier: true,
@@ -38,9 +39,33 @@ export class PurchaseService {
     }
   }
 
-  async create(data: any) {
+  async create(data: any, companyId?: number) {
     try {
       this.logger.info('Creating purchase:', { supplierId: data.supplierId });
+
+      // Supplier must belong to the same company
+      const supplier = await this.prisma.supplier.findFirst({
+        where: {
+          id: Number(data.supplierId),
+          ...(companyId ? { companyId } : {}),
+        },
+      });
+      if (!supplier) {
+        throw new Error('Supplier not found');
+      }
+
+      // Verify all products belong to the same company
+      for (const item of data.items) {
+        const product = await this.prisma.product.findFirst({
+          where: {
+            id: Number(item.productId),
+            ...(companyId ? { companyId } : {}),
+          },
+        });
+        if (!product) {
+          throw new Error(`Product ${item.productId} not found`);
+        }
+      }
 
       // Calculate totals
       const subtotal = data.items.reduce(
@@ -55,6 +80,7 @@ export class PurchaseService {
         // Create the purchase
         const purchase = await tx.purchase.create({
           data: {
+            companyId,
             supplierId: Number(data.supplierId),
             date: new Date(data.date),
             subtotal,
@@ -79,6 +105,15 @@ export class PurchaseService {
 
         // Update product stock
         for (const item of data.items) {
+          const product = await tx.product.findFirst({
+            where: {
+              id: Number(item.productId),
+              ...(companyId ? { companyId } : {}),
+            },
+          });
+          if (!product) {
+            throw new Error(`Product ${item.productId} not found`);
+          }
           await tx.product.update({
             where: { id: Number(item.productId) },
             data: {
@@ -99,9 +134,19 @@ export class PurchaseService {
     }
   }
 
-  async updatePaymentStatus(id: number, paymentStatus: string) {
+  async updatePaymentStatus(
+    id: number,
+    paymentStatus: string,
+    companyId?: number,
+  ) {
     try {
       this.logger.info(`Updating purchase payment status: ${id}`);
+      const existing = await this.prisma.purchase.findFirst({
+        where: { id, ...(companyId ? { companyId } : {}) },
+      });
+      if (!existing) {
+        throw new Error('Compra no encontrada');
+      }
       return await this.prisma.purchase.update({
         where: { id },
         data: { paymentStatus },

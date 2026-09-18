@@ -13,12 +13,15 @@ export class ProductService {
     private r2Service: R2Service,
   ) {}
 
-  async findAll(query: PaginationQueryDto) {
+  async findAll(query: PaginationQueryDto, companyId?: number) {
     this.logger.info('Starting ProductService function');
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
 
     const where: any = {};
+    if (companyId) {
+      where.companyId = companyId;
+    }
     if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
@@ -66,12 +69,13 @@ export class ProductService {
     }
   }
 
-  async findById(id: number) {
+  async findById(id: number, companyId?: number) {
     this.logger.info(`Finding product by ID: ${id}`);
     try {
-      const result = await this.productPrisma.product.findUnique({
+      const result = await this.productPrisma.product.findFirst({
         where: {
           id,
+          ...(companyId ? { companyId } : {}),
         },
       });
       return result || null;
@@ -81,11 +85,12 @@ export class ProductService {
     }
   }
 
-  async create(data: any, file?: Express.Multer.File) {
+  async create(data: any, file?: Express.Multer.File, companyId?: number) {
     try {
       this.logger.info('Creating product:', { name: data.name });
       const createData: any = {
         ...data,
+        companyId,
         purchasePrice: Number(data.purchasePrice),
         salePrice: Number(data.salePrice),
         stock: Number(data.stock),
@@ -105,9 +110,19 @@ export class ProductService {
     }
   }
 
-  async update(id: number, data: any, file?: Express.Multer.File) {
+  async update(
+    id: number,
+    data: any,
+    file?: Express.Multer.File,
+    companyId?: number,
+  ) {
     try {
       this.logger.info(`Updating product: ${id}`);
+      const where = { id, ...(companyId ? { companyId } : {}) };
+      const product = await this.productPrisma.product.findFirst({ where });
+      if (!product) {
+        throw new Error('Producto no encontrado');
+      }
       const updateData: any = { ...data };
       if (data.purchasePrice !== undefined)
         updateData.purchasePrice = Number(data.purchasePrice);
@@ -118,12 +133,6 @@ export class ProductService {
         updateData.sizes = JSON.parse(data.sizes);
       }
       if (file) {
-        const product = await this.productPrisma.product.findUnique({
-          where: { id },
-        });
-        if (!product) {
-          throw new Error('Producto no encontrado');
-        }
         if (product.image) {
           await this.r2Service.deleteFile(product.image);
         }
@@ -139,11 +148,11 @@ export class ProductService {
     }
   }
 
-  async uploadImage(id: number, file: Express.Multer.File) {
+  async uploadImage(id: number, file: Express.Multer.File, companyId?: number) {
     try {
       this.logger.info(`Uploading image for product: ${id}`);
-      const product = await this.productPrisma.product.findUnique({
-        where: { id },
+      const product = await this.productPrisma.product.findFirst({
+        where: { id, ...(companyId ? { companyId } : {}) },
       });
       if (!product) {
         throw new Error('Producto no encontrado');
@@ -162,12 +171,15 @@ export class ProductService {
     }
   }
 
-  async delete(id: number) {
+  async delete(id: number, companyId?: number) {
     try {
       this.logger.info(`Deleting product: ${id}`);
-      const product = await this.productPrisma.product.findUnique({
-        where: { id },
+      const product = await this.productPrisma.product.findFirst({
+        where: { id, ...(companyId ? { companyId } : {}) },
       });
+      if (!product) {
+        throw new Error('Producto no encontrado');
+      }
       if (product?.image) {
         await this.r2Service.deleteFile(product.image);
       }

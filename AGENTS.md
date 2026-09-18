@@ -3,6 +3,10 @@
 ## Project Overview
 This is a NestJS REST API with Prisma ORM, PostgreSQL, Jest testing, and Swagger documentation.
 
+## Tenancy (important)
+
+The system is multi-tenant: `Company` (kind `PERSONA`/`EMPRESA`) is the tenant. Every business entity (`Product`, `Client`, `Supplier`, `Sale`, `Invoice`, `Purchase`, `Category`, `ProductType`) has a `companyId` column and every `User` belongs to a `Company`. The JWT payload carries `companyId`/`companyKind`/`companyName`; services scope every query and inject `companyId` on create. `UserAdmin` (Basic auth) is a global superadmin with no `companyId` (its requests skip the tenant filter). Do not add a module that reads business data without scoping by `req.user.companyId`. `companyId` is nullable in the schema only because legacy data was backfilled to the admin company; new records always set it.
+
 ## Commands
 
 ### Development

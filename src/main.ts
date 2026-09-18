@@ -18,7 +18,7 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: 'http://localhost:5173', // Specify the exact origin of your frontend
+    origin: ['https://zettastock.com', 'http://localhost:5173'], // Especifica los orígenes permitidos del frontend
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS', // Allowed HTTP methods
     credentials: true, // Allow sending cookies and authorization headers
   });
@@ -26,7 +26,7 @@ async function bootstrap() {
   // await app.listen(3000); // Or
   // Use DocumentBuilder to create a new Swagger document configuration
   const config = new DocumentBuilder()
-    .setTitle('API') // Set the title of the API
+    .setTitle('zettastock API') // Set the title of the API
     .setDescription('Api Nestjs') // Set the description of the API
     .setVersion('0.1') // Set the version of the API
     .addBearerAuth() // JWT auth

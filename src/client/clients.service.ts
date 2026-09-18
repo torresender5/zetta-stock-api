@@ -10,17 +10,20 @@ export class ClientsService {
     private prisma: PrismaService,
   ) {}
 
-  async findAll() {
+  async findAll(companyId?: number) {
     this.logger.info('Starting findAll function');
-    return this.prisma.client.findMany();
+    return this.prisma.client.findMany({
+      where: companyId ? { companyId } : {},
+    });
   }
 
-  async findById(id: number) {
+  async findById(id: number, companyId?: number) {
     this.logger.info(`Finding client by ID: ${id}`);
     try {
-      const result = await this.prisma.client.findUnique({
+      const result = await this.prisma.client.findFirst({
         where: {
           id,
+          ...(companyId ? { companyId } : {}),
         },
       });
       return result || null;
@@ -30,12 +33,13 @@ export class ClientsService {
     }
   }
 
-  async findByEmail(email: string) {
+  async findByEmail(email: string, companyId?: number) {
     this.logger.info(`Finding client by email: ${email}`);
     try {
-      const result = await this.prisma.client.findUnique({
+      const result = await this.prisma.client.findFirst({
         where: {
           email,
+          ...(companyId ? { companyId } : {}),
         },
       });
       return result || null;
@@ -45,11 +49,12 @@ export class ClientsService {
     }
   }
 
-  async create(data: any) {
+  async create(data: any, companyId?: number) {
     try {
       this.logger.info('Creating client:', { name: data.name });
       const createData = {
         ...data,
+        companyId,
       };
       return await this.prisma.client.create({
         data: createData,
@@ -60,9 +65,15 @@ export class ClientsService {
     }
   }
 
-  async update(id: number, data: any) {
+  async update(id: number, data: any, companyId?: number) {
     try {
       this.logger.info(`Updating client: ${id}`);
+      const existing = await this.prisma.client.findFirst({
+        where: { id, ...(companyId ? { companyId } : {}) },
+      });
+      if (!existing) {
+        throw new Error('Cliente no encontrado');
+      }
       return await this.prisma.client.update({
         where: { id },
         data,
@@ -73,9 +84,15 @@ export class ClientsService {
     }
   }
 
-  async delete(id: number) {
+  async delete(id: number, companyId?: number) {
     try {
       this.logger.info(`Deleting client: ${id}`);
+      const existing = await this.prisma.client.findFirst({
+        where: { id, ...(companyId ? { companyId } : {}) },
+      });
+      if (!existing) {
+        throw new Error('Cliente no encontrado');
+      }
       return await this.prisma.client.delete({
         where: { id },
       });

@@ -5,6 +5,7 @@ const prisma = new PrismaClient();
 
 const TOTAL_STOCK = 50;
 const PURCHASE_PRICE_RATE = 0.6;
+const LEGACY_COMPANY_NAME = 'Empresa Admin';
 
 interface SourceProduct {
   name: string;
@@ -253,8 +254,9 @@ function buildSizes(sizes: string[]): Prisma.InputJsonValue {
   }));
 }
 
-function toProductData(source: SourceProduct, index: number) {
+function toProductData(source: SourceProduct, index: number, companyId: number) {
   return {
+    companyId,
     name: source.name,
     description: source.description,
     code: slugify(source.name),
@@ -267,6 +269,44 @@ function toProductData(source: SourceProduct, index: number) {
     image: source.image,
     sizes: buildSizes(source.sizes),
   };
+}
+
+async function seedAdminCompany() {
+  let company = await prisma.company.findFirst({
+    where: { name: LEGACY_COMPANY_NAME },
+  });
+  if (!company) {
+    company = await prisma.company.create({
+      data: { name: LEGACY_COMPANY_NAME, kind: 'EMPRESA' },
+    });
+    console.log(`Company admin creada: ${company.id}`);
+  }
+
+  const models = [
+    'product',
+    'client',
+    'supplier',
+    'sale',
+    'invoice',
+    'purchase',
+    'category',
+    'productType',
+    'user',
+  ] as const;
+  for (const model of models) {
+    const result = await (
+      prisma[model] as {
+        updateMany: (args: any) => Promise<{ count: number }>;
+      }
+    ).updateMany({
+      where: { companyId: null },
+      data: { companyId: company.id },
+    });
+    if (result.count > 0) {
+      console.log(`Backfill ${model}: ${result.count} filas -> company ${company.id}`);
+    }
+  }
+  return company;
 }
 
 async function seedAdmin() {
@@ -285,9 +325,9 @@ async function seedAdmin() {
   console.log(`UserAdmin listo: ${email}`);
 }
 
-async function seedProducts() {
+async function seedProducts(companyId: number) {
   for (let i = 0; i < sourceProducts.length; i++) {
-    const data = toProductData(sourceProducts[i], i);
+    const data = toProductData(sourceProducts[i], i, companyId);
     const existing = await prisma.product.findFirst({ where: { code: data.code } });
     if (existing) {
       await prisma.product.update({ where: { id: existing.id }, data });
@@ -299,8 +339,9 @@ async function seedProducts() {
 }
 
 async function main() {
+  const adminCompany = await seedAdminCompany();
   await seedAdmin();
-  await seedProducts();
+  await seedProducts(adminCompany.id);
 }
 
 main()

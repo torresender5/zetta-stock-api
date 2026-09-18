@@ -5,7 +5,6 @@ import {
   Post,
   Patch,
   Delete,
-  UseGuards,
   HttpCode,
   HttpStatus,
   Body,
@@ -14,9 +13,10 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Req,
 } from '@nestjs/common';
-import { AuthGuard } from '../auth/auth.guard';
-import { Auth } from '../auth/auth.decorator';
+import { AuthRoles } from '../auth/auth-roles.decorator';
+import { AuthUserPayload } from '../auth/auth-user.interface';
 import { ProductService } from './product.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
@@ -46,21 +46,27 @@ export class ProductController {
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
   ) {}
 
-  @Auth()
+  @AuthRoles('admin', 'vendedor', 'inventario')
   @Get()
-  findAll(@Query() query: PaginationQueryDto) {
+  findAll(
+    @Query() query: PaginationQueryDto,
+    @Req() req: Request & { user: AuthUserPayload },
+  ) {
     this.logger.info('Starting ProductController find all');
-    return this.productService.findAll(query);
+    return this.productService.findAll(query, req.user?.companyId);
   }
-  @Auth()
+  @AuthRoles('admin', 'vendedor', 'inventario')
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  findOne(
+    @Param('id') id: string,
+    @Req() req: Request & { user: AuthUserPayload },
+  ) {
     const productId = parseInt(id, 10);
     this.logger.info(`Starting ProductController find By ID: ${productId}`);
-    return this.productService.findById(productId);
+    return this.productService.findById(productId, req.user?.companyId);
   }
 
-  @UseGuards(AuthGuard)
+  @AuthRoles('admin', 'inventario')
   @HttpCode(HttpStatus.OK)
   @Post()
   @UseInterceptors(
@@ -73,12 +79,13 @@ export class ProductController {
   create(
     @Body() data: ProductCreateDto,
     @UploadedFile() file?: Express.Multer.File,
+    @Req() req?: Request & { user: AuthUserPayload },
   ) {
     this.logger.info('Starting ProductController Create Product');
-    return this.productService.create(data, file);
+    return this.productService.create(data, file, req?.user?.companyId);
   }
 
-  @UseGuards(AuthGuard)
+  @AuthRoles('admin', 'inventario')
   @HttpCode(HttpStatus.OK)
   @Patch(':id')
   @UseInterceptors(
@@ -92,13 +99,19 @@ export class ProductController {
     @Param('id') id: string,
     @Body() data: UpdateProductDto,
     @UploadedFile() file?: Express.Multer.File,
+    @Req() req?: Request & { user: AuthUserPayload },
   ) {
     const productId = parseInt(id, 10);
     this.logger.info(`Starting ProductController Update Product: ${productId}`);
-    return this.productService.update(productId, data, file);
+    return this.productService.update(
+      productId,
+      data,
+      file,
+      req?.user?.companyId,
+    );
   }
 
-  @UseGuards(AuthGuard)
+  @AuthRoles('admin', 'inventario')
   @HttpCode(HttpStatus.OK)
   @Patch(':id/image')
   @UseInterceptors(
@@ -111,6 +124,7 @@ export class ProductController {
   uploadImage(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
+    @Req() req?: Request & { user: AuthUserPayload },
   ) {
     const productId = parseInt(id, 10);
     this.logger.info(
@@ -119,15 +133,22 @@ export class ProductController {
     if (!file) {
       throw new BadRequestException('No se ha proporcionado un archivo');
     }
-    return this.productService.uploadImage(productId, file);
+    return this.productService.uploadImage(
+      productId,
+      file,
+      req?.user?.companyId,
+    );
   }
 
-  @UseGuards(AuthGuard)
+  @AuthRoles('admin', 'inventario')
   @HttpCode(HttpStatus.OK)
   @Delete(':id')
-  delete(@Param('id') id: string) {
+  delete(
+    @Param('id') id: string,
+    @Req() req?: Request & { user: AuthUserPayload },
+  ) {
     const productId = parseInt(id, 10);
     this.logger.info(`Starting ProductController Delete Product: ${productId}`);
-    return this.productService.delete(productId);
+    return this.productService.delete(productId, req?.user?.companyId);
   }
 }

@@ -10,6 +10,8 @@ import bcrypt from 'bcryptjs';
 import { MailService } from '../email/mail.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
+import { RegisterDto } from './dto/auth.dto';
+import { buildAuthPayload } from './auth.util';
 
 @Injectable()
 export class AuthService {
@@ -34,17 +36,15 @@ export class AuthService {
 
   async signIn(email: string, pass: string): Promise<any> {
     const user = await this.usersService.findByEmail(email);
-    console.log(user);
 
     if (!user) {
       throw new UnauthorizedException();
     }
     const isValid = await this.verifyPassword(pass, user?.password);
-    console.log(isValid);
     if (!isValid) {
       throw new UnauthorizedException();
     }
-    const payload = { sub: user.id, name: user.user, email: user.email };
+    const payload = buildAuthPayload(user);
     this.logger.debug(payload);
     await this.mailService.sendUserConfirmation(user, 'Hola');
 
@@ -53,16 +53,32 @@ export class AuthService {
     };
   }
 
-  async register(data: any) {
+  async register(data: RegisterDto) {
     try {
       this.logger.debug(data);
-      data['password'] = await this.hashPassword(data.password);
-      this.logger.debug(data);
-      const user = await this.usersService.createUser(data);
+      const password = await this.hashPassword(data.password);
+      const companyName =
+        data.accountType === 'EMPRESA'
+          ? data.companyName || data.user
+          : data.user;
+      const user = await this.usersService.createUserWithCompany({
+        user: data.user,
+        email: data.email,
+        password,
+        companyData: {
+          name: companyName,
+          kind: data.accountType,
+          document: data.document ?? null,
+          phoneNumber: data.phoneNumber ?? null,
+          address: data.address ?? null,
+        },
+      });
+      this.logger.info(`User ${data.email} creado con company ${companyName}`);
+      return user;
     } catch (error) {
+      this.logger.error('Error trying to create a user', error);
       throw new BadRequestException('Error trying to create a user', {
-        cause: new Error(),
-        description: 'Error trying to create a user',
+        cause: error,
       });
     }
   }
