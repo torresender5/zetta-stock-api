@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Body,
   Param,
+  Query,
   Inject,
   Req,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import {
   CreateSaleDto,
+  ListSalesQueryDto,
   UpdateSalePaymentStatusDto,
   UpdateInvoiceStatusDto,
 } from './dto/sale.dto';
@@ -30,9 +32,16 @@ export class SaleController {
 
   @AuthRoles('admin', 'vendedor')
   @Get()
-  findAll(@Req() req: Request & { user: AuthUserPayload }) {
+  findAll(
+    @Query() query: ListSalesQueryDto,
+    @Req() req: Request & { user: AuthUserPayload },
+  ) {
     this.logger.info('Starting SaleController find all');
-    return this.saleService.findAll(req.user?.companyId);
+    return this.saleService.findAll(
+      req.user?.companyId,
+      query.page ?? 1,
+      query.limit ?? 10,
+    );
   }
 
   @AuthRoles('admin', 'vendedor')
@@ -73,6 +82,9 @@ export class SaleController {
       saleId,
       data.paymentStatus,
       req.user?.companyId,
+      data.cancelledReason,
+      data.refundAmount,
+      data.refundMethod,
     );
   }
 }

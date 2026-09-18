@@ -1,10 +1,14 @@
-import { ApiProperty, ApiSchema } from '@nestjs/swagger';
+import { ApiProperty, ApiSchema, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsString,
   IsNumber,
   IsArray,
   ValidateNested,
   IsOptional,
+  IsIn,
+  IsInt,
+  Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -62,11 +66,53 @@ export class CreateSaleDto {
   paymentStatus: string;
 }
 
+@ApiSchema({ name: 'ListSales' })
+export class ListSalesQueryDto {
+  @ApiPropertyOptional({ description: 'Page number (1-based)', default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ description: 'Items per page', default: 10 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 10;
+}
+
 @ApiSchema({ name: 'UpdateSalePaymentStatus' })
 export class UpdateSalePaymentStatusDto {
-  @ApiProperty({ description: 'Payment Status', enum: ['paid', 'pending'] })
+  @ApiProperty({
+    description: 'Payment Status',
+    enum: ['paid', 'pending', 'cancelled'],
+  })
   @IsString()
+  @IsIn(['paid', 'pending', 'cancelled'])
   paymentStatus: string;
+
+  @ApiPropertyOptional({ description: 'Cancellation reason' })
+  @IsOptional()
+  @IsString()
+  cancelledReason?: string;
+
+  @ApiPropertyOptional({
+    description: 'Refund amount for cancelled paid sales',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  refundAmount?: number;
+
+  @ApiPropertyOptional({
+    description: 'Refund method for cancelled paid sales',
+  })
+  @IsOptional()
+  @IsString()
+  refundMethod?: string;
 }
 
 @ApiSchema({ name: 'UpdateInvoiceStatus' })
