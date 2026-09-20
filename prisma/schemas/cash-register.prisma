@@ -1,0 +1,40 @@
+model CashRegister {
+  id            Int            @id @default(autoincrement())
+  companyId     Int?
+  company       Company?       @relation(fields: [companyId], references: [id])
+  userId        Int
+  user          User           @relation(fields: [userId], references: [id])
+  name          String
+  baseAmount    Float
+  openedAt      DateTime       @default(now())
+  closedAt      DateTime?
+  status        String         @default("open") // open | closed
+  expectedTotal Float?
+  countedTotal  Float?
+  difference    Float?
+  movements     CashMovement[]
+
+  @@index([companyId, userId])
+  @@index([companyId, status])
+}
+
+model CashMovement {
+  id             Int          @id @default(autoincrement())
+  cashRegisterId Int
+  cashRegister   CashRegister @relation(fields: [cashRegisterId], references: [id])
+  companyId      Int?
+  company        Company?     @relation(fields: [companyId], references: [id])
+  saleId         Int?
+  sale           Sale?        @relation(fields: [saleId], references: [id])
+  apartadoId     Int?
+  apartado       Apartado?    @relation(fields: [apartadoId], references: [id])
+  type           String // opening | sale | expense | withdrawal | deposit | refund | apartado | closing
+  paymentMethod  String       @default("cash") // cash | card | transfer | credit
+  amount         Float        // con signo: positivo ingreso, negativo egreso
+  description    String?
+  createdAt      DateTime     @default(now())
+
+  @@index([cashRegisterId])
+  @@index([saleId])
+  @@index([apartadoId])
+}

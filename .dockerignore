@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+.env
+.env.*
+*.log
+logs
+uploads
+.git
+.github
+CAMBIOS_SIN_SUBIR.md
+TODO.md
+*.md
+.vscode
+.idea

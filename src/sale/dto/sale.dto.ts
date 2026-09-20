@@ -64,6 +64,22 @@ export class CreateSaleDto {
   @ApiProperty({ description: 'Payment Status', enum: ['paid', 'pending'] })
   @IsString()
   paymentStatus: string;
+
+  @ApiProperty({
+    description: 'Payment Method',
+    enum: ['cash', 'card', 'transfer', 'credit'],
+    default: 'cash',
+  })
+  @IsString()
+  paymentMethod: string = 'cash';
+
+  @ApiPropertyOptional({
+    description: 'Amount received (used to compute change)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  receivedAmount?: number;
 }
 
 @ApiSchema({ name: 'ListSales' })
@@ -113,6 +129,14 @@ export class UpdateSalePaymentStatusDto {
   @IsOptional()
   @IsString()
   refundMethod?: string;
+
+  @ApiPropertyOptional({
+    description: 'Payment method used (for pending to paid)',
+    enum: ['cash', 'card', 'transfer', 'credit'],
+  })
+  @IsOptional()
+  @IsString()
+  paymentMethod?: string;
 }
 
 @ApiSchema({ name: 'UpdateInvoiceStatus' })

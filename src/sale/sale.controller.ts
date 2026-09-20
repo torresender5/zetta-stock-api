@@ -63,7 +63,7 @@ export class SaleController {
     @Req() req: Request & { user: AuthUserPayload },
   ) {
     this.logger.info('Starting SaleController Create Sale');
-    return this.saleService.create(data, req.user?.companyId);
+    return this.saleService.create(data, req.user?.companyId, req.user.sub);
   }
 
   @AuthRoles('admin', 'vendedor')
@@ -85,6 +85,8 @@ export class SaleController {
       data.cancelledReason,
       data.refundAmount,
       data.refundMethod,
+      data.paymentMethod,
+      req.user.sub,
     );
   }
 }
@@ -117,6 +119,7 @@ export class InvoiceController {
       invoiceId,
       data.status,
       req.user?.companyId,
+      req.user.sub,
     );
   }
 }

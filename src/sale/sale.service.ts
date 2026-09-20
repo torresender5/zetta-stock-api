@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
@@ -60,9 +60,17 @@ export class SaleService {
     }
   }
 
-  async create(data: any, companyId?: number) {
+  async create(data: any, companyId?: number, userId?: number) {
     try {
       this.logger.info('Creating sale:', { clientId: data.clientId });
+
+      // Requiere una caja abierta del usuario para registrar la venta
+      const register = await this.findActiveRegister(companyId, userId);
+      if (!register) {
+        throw new BadRequestException(
+          'No hay una caja abierta para realizar la venta',
+        );
+      }
 
       // Get client info for invoice (must belong to same company)
       const client = await this.prisma.client.findFirst({
@@ -119,6 +127,7 @@ export class SaleService {
             tax,
             total,
             saleNumber,
+            register,
           );
         } catch (error: any) {
           if (error?.code !== 'P2002' || attempt === maxAttempts - 1) {
@@ -135,6 +144,36 @@ export class SaleService {
     }
   }
 
+  private async findActiveRegister(companyId?: number, userId?: number) {
+    if (!companyId) {
+      return null;
+    }
+    return this.prisma.cashRegister.findFirst({
+      where: {
+        status: 'open',
+        ...(companyId ? { companyId } : {}),
+        ...(userId ? { userId } : {}),
+      },
+    });
+  }
+
+  private mapRefundMethod(method?: string): string {
+    if (!method) {
+      return 'cash';
+    }
+    const normalized = method.toLowerCase();
+    if (normalized.includes('tarjeta') || normalized.includes('card')) {
+      return 'card';
+    }
+    if (normalized.includes('transfe')) {
+      return 'transfer';
+    }
+    if (normalized.includes('credit') || normalized.includes('crédit')) {
+      return 'credit';
+    }
+    return 'cash';
+  }
+
   private async createWithSaleNumber(
     data: any,
     companyId: number | undefined,
@@ -143,7 +182,13 @@ export class SaleService {
     tax: number,
     total: number,
     saleNumber: string,
+    register?: any,
   ) {
+    const changeAmount =
+      data.receivedAmount != null && Number(data.receivedAmount) > total
+        ? Number(data.receivedAmount) - total
+        : null;
+
     // Create sale with items and invoice in a transaction
     const result = await this.prisma.$transaction(async (tx) => {
       // Create the sale
@@ -157,6 +202,10 @@ export class SaleService {
           tax,
           total,
           paymentStatus: data.paymentStatus,
+          paymentMethod: data.paymentMethod || 'cash',
+          receivedAmount:
+            data.receivedAmount != null ? Number(data.receivedAmount) : null,
+          changeAmount,
           items: {
             create: data.items.map((item: any) => ({
               productId: Number(item.productId),
@@ -216,6 +265,21 @@ export class SaleService {
         });
       }
 
+      // Register the cash movement for paid sales
+      if (data.paymentStatus === 'paid' && register) {
+        await tx.cashMovement.create({
+          data: {
+            cashRegisterId: register.id,
+            companyId,
+            saleId: sale.id,
+            type: 'sale',
+            paymentMethod: data.paymentMethod || 'cash',
+            amount: total,
+            description: `Venta ${saleNumber}`,
+          },
+        });
+      }
+
       return { sale, invoice };
     });
 
@@ -229,6 +293,8 @@ export class SaleService {
     cancelledReason?: string,
     refundAmount?: number,
     refundMethod?: string,
+    newPaymentMethod?: string,
+    userId?: number,
   ) {
     try {
       this.logger.info(`Updating sale payment status: ${id}`);
@@ -238,6 +304,24 @@ export class SaleService {
       });
       if (!existing) {
         throw new Error('Venta no encontrada');
+      }
+
+      const from = existing.paymentStatus;
+      const to = paymentStatus;
+
+      // Transiciones que mueven dinero en la caja
+      const touchesCash =
+        (to === 'paid' && from !== 'paid') ||
+        (to === 'pending' && from === 'paid') ||
+        (to === 'cancelled' && from === 'paid');
+
+      const register = touchesCash
+        ? await this.findActiveRegister(companyId, userId)
+        : null;
+      if (touchesCash && !register) {
+        throw new BadRequestException(
+          'No hay una caja abierta para registrar el movimiento',
+        );
       }
 
       const result = await this.prisma.$transaction(async (tx) => {
@@ -265,6 +349,9 @@ export class SaleService {
               paymentStatus === 'cancelled' ? (refundAmount ?? null) : null,
             refundMethod:
               paymentStatus === 'cancelled' ? refundMethod || null : null,
+            ...(paymentStatus === 'paid' && newPaymentMethod
+              ? { paymentMethod: newPaymentMethod }
+              : {}),
           },
           include: {
             items: true,
@@ -282,6 +369,49 @@ export class SaleService {
               : { cancelledReason: null }),
           },
         });
+
+        // Register the cash movement for money transitions
+        if (register) {
+          if (to === 'paid' && from !== 'paid') {
+            await tx.cashMovement.create({
+              data: {
+                cashRegisterId: register.id,
+                companyId,
+                saleId: id,
+                type: 'sale',
+                paymentMethod:
+                  newPaymentMethod || existing.paymentMethod || 'cash',
+                amount: existing.total,
+                description: `Cobro de venta ${existing.saleNumber ?? id}`,
+              },
+            });
+          } else if (to === 'pending' && from === 'paid') {
+            await tx.cashMovement.create({
+              data: {
+                cashRegisterId: register.id,
+                companyId,
+                saleId: id,
+                type: 'sale',
+                paymentMethod: existing.paymentMethod || 'cash',
+                amount: -existing.total,
+                description: `Reversión a por cobrar de venta ${existing.saleNumber ?? id}`,
+              },
+            });
+          } else if (to === 'cancelled' && from === 'paid') {
+            const refund = refundAmount ?? existing.total;
+            await tx.cashMovement.create({
+              data: {
+                cashRegisterId: register.id,
+                companyId,
+                saleId: id,
+                type: 'refund',
+                paymentMethod: this.mapRefundMethod(refundMethod),
+                amount: -Number(refund),
+                description: `Reembolso de venta cancelada ${existing.saleNumber ?? id}`,
+              },
+            });
+          }
+        }
 
         return sale;
       });
@@ -308,7 +438,12 @@ export class SaleService {
     });
   }
 
-  async updateInvoiceStatus(id: number, status: string, companyId?: number) {
+  async updateInvoiceStatus(
+    id: number,
+    status: string,
+    companyId?: number,
+    userId?: number,
+  ) {
     try {
       this.logger.info(`Updating invoice status: ${id}`);
       const existing = await this.prisma.invoice.findFirst({
@@ -317,15 +452,49 @@ export class SaleService {
       if (!existing) {
         throw new Error('Factura no encontrada');
       }
-      const invoice = await this.prisma.invoice.update({
-        where: { id },
-        data: { status },
-      });
 
-      // Also update the sale payment status
-      await this.prisma.sale.updateMany({
-        where: { id: invoice.saleId, ...(companyId ? { companyId } : {}) },
-        data: { paymentStatus: status },
+      const touchesCash = status === 'paid' && existing.status !== 'paid';
+      const register = touchesCash
+        ? await this.findActiveRegister(companyId, userId)
+        : null;
+      if (touchesCash && !register) {
+        throw new BadRequestException(
+          'No hay una caja abierta para registrar el cobro',
+        );
+      }
+
+      const invoice = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.invoice.update({
+          where: { id },
+          data: { status },
+        });
+
+        // Also update the sale payment status
+        await tx.sale.updateMany({
+          where: { id: invoice.saleId, ...(companyId ? { companyId } : {}) },
+          data: { paymentStatus: status },
+        });
+
+        if (touchesCash && register) {
+          const sale = await tx.sale.findFirst({
+            where: { id: invoice.saleId },
+          });
+          if (sale) {
+            await tx.cashMovement.create({
+              data: {
+                cashRegisterId: register.id,
+                companyId,
+                saleId: sale.id,
+                type: 'sale',
+                paymentMethod: sale.paymentMethod || 'cash',
+                amount: sale.total,
+                description: `Cobro de factura ${invoice.invoiceNumber}`,
+              },
+            });
+          }
+        }
+
+        return updated;
       });
 
       return invoice;

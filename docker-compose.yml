@@ -1,25 +1,28 @@
-version: '3.8'
-
 services:
   nest_api:
     build:
       context: .
       dockerfile: Dockerfile
-      # Para producción, puedes cambiar a una etapa de producción si tienes un Dockerfile multietapa
-      # target: production
-    image: nest_api
+    image: torresender5/zettastock-api:latest
+    container_name: zettastock-api
+    restart: unless-stopped
     ports:
-      - "3000:3000" # Mapea el puerto 3000 de tu máquina local al puerto 3000 del contenedor
-    volumes:
-      - .:/api # Vincula el directorio local con /app en el contenedor (ideal para desarrollo)
-      - node:/api/node_modules # Evita sobrescribir los node_modules del contenedor con los del host
-    # env_file:
-    #   - .env
+      - "3000:3000"
+    env_file:
+      - .env
     environment:
-      FILE:
-      DATABASE_URL: ${DATABASE_URL}
-      NODE_ENV: development # O 'production' para producción
-    command: npm run start:dev # O usa el comando de producción
-    
-volumes:
-  node:
+      NODE_ENV: production
+      PORT: 3000
+    volumes:
+      - ./logs:/var/log
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/swagger').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3

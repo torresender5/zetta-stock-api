@@ -10,6 +10,8 @@ import { ClientsModule } from './client/clients.module';
 import { SupplierModule } from './supplier/supplier.module';
 import { SaleModule } from './sale/sale.module';
 import { PurchaseModule } from './purchase/purchase.module';
+import { CashRegisterModule } from './cash-register/cash-register.module';
+import { ApartadoModule } from './apartado/apartado.module';
 
 @Module({
   imports: [
@@ -21,6 +23,8 @@ import { PurchaseModule } from './purchase/purchase.module';
     SupplierModule,
     SaleModule,
     PurchaseModule,
+    CashRegisterModule,
+    ApartadoModule,
   ],
   controllers: [],
   providers: [PrismaService],

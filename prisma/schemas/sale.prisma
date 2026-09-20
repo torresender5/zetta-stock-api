@@ -10,12 +10,17 @@ model Sale {
   tax             Float
   total           Float
   paymentStatus   String      @default("pending")
+  paymentMethod   String      @default("cash") // cash | card | transfer | credit
+  receivedAmount  Float?
+  changeAmount    Float?
   cancelledReason String?
   refundAmount    Float?
   refundMethod    String?
   createdAt       DateTime    @default(now())
   items           SaleItem[]
   invoice         Invoice?
+  cashMovements   CashMovement[]
+  apartado        Apartado?
 
   @@unique([companyId, saleNumber])
 }

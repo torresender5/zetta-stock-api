@@ -8,6 +8,7 @@ model User {
   companyId Int?
   company   Company? @relation(fields: [companyId], references: [id])
   person    Person[]
+  cashRegisters CashRegister[]
 }
 
 model Posts {
@@ -50,6 +51,10 @@ model Company {
   purchases   Purchase[]
   sales       Sale[]
   invoices    Invoice[]
+  cashRegisters  CashRegister[]
+  cashMovements  CashMovement[]
+  apartados      Apartado[]
+  apartadoPayments ApartadoPayment[]
 }
 
 model Category {

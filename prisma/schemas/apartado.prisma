@@ -1,0 +1,53 @@
+model Apartado {
+  id             Int               @id @default(autoincrement())
+  companyId      Int?
+  company        Company?          @relation(fields: [companyId], references: [id])
+  apartadoNumber String
+  clientId       Int
+  client         Client            @relation(fields: [clientId], references: [id])
+  date           DateTime
+  subtotal       Float
+  tax            Float
+  total          Float
+  initialPayment Float             @default(0)
+  totalPaid      Float             @default(0)
+  status         String            @default("active") // active | paid | cancelled
+  dueDate        DateTime?
+  notes          String?
+  saleId         Int?              @unique
+  sale           Sale?             @relation(fields: [saleId], references: [id])
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  items          ApartadoItem[]
+  payments       ApartadoPayment[]
+  cashMovements  CashMovement[]
+
+  @@unique([companyId, apartadoNumber])
+}
+
+model ApartadoItem {
+  id          Int       @id @default(autoincrement())
+  apartadoId  Int
+  apartado    Apartado  @relation(fields: [apartadoId], references: [id])
+  productId   Int
+  product     Product   @relation(fields: [productId], references: [id])
+  productName String
+  size        String?
+  quantity    Int
+  unitPrice   Float
+  subtotal    Float
+}
+
+model ApartadoPayment {
+  id             Int        @id @default(autoincrement())
+  apartadoId     Int
+  apartado       Apartado   @relation(fields: [apartadoId], references: [id])
+  companyId      Int?
+  company        Company?   @relation(fields: [companyId], references: [id])
+  amount         Float
+  paymentMethod  String     @default("cash") // cash | card | transfer | credit
+  date           DateTime   @default(now())
+  description    String?
+  cashRegisterId Int?
+  createdAt      DateTime   @default(now())
+}

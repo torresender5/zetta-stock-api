@@ -17,8 +17,15 @@ async function bootstrap() {
     }),
   );
 
+  const corsOrigins = (
+    process.env.CORS_ORIGINS ?? 'https://zettastock.com,http://localhost:5173'
+  )
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   app.enableCors({
-    origin: ['https://zettastock.com', 'http://localhost:5173'], // Especifica los orígenes permitidos del frontend
+    origin: corsOrigins, // Orígenes permitidos del frontend (env CORS_ORIGINS)
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS', // Allowed HTTP methods
     credentials: true, // Allow sending cookies and authorization headers
   });

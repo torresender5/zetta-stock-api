@@ -10,6 +10,7 @@ model Client {
   createdAt DateTime @default(now())
   sales     Sale[]
   invoices  Invoice[]
+  apartados Apartado[]
 
   @@unique([companyId, email])
   @@unique([companyId, document])
