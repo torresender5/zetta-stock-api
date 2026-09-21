@@ -320,7 +320,10 @@ describe('ApartadoService', () => {
 
       expect(prisma.apartadoPayment.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ amount: 40000, paymentMethod: 'card' }),
+          data: expect.objectContaining({
+            amount: 40000,
+            paymentMethod: 'card',
+          }),
         }),
       );
       expect(prisma.cashMovement.create).toHaveBeenCalledWith(

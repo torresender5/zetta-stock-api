@@ -64,11 +64,7 @@ export class ApartadoController {
     @Req() req: Request & { user: AuthUserPayload },
   ) {
     this.logger.info('Starting ApartadoController create');
-    return this.apartadoService.create(
-      data,
-      req.user?.companyId,
-      req.user.sub,
-    );
+    return this.apartadoService.create(data, req.user?.companyId, req.user.sub);
   }
 
   @AuthRoles('admin', 'vendedor')

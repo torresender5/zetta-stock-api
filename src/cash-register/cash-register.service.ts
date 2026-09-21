@@ -279,7 +279,8 @@ export class CashRegisterService {
         }
       }
 
-      expectedByMethod.cash = (expectedByMethod.cash || 0) + register.baseAmount;
+      expectedByMethod.cash =
+        (expectedByMethod.cash || 0) + register.baseAmount;
 
       return {
         baseAmount: register.baseAmount,

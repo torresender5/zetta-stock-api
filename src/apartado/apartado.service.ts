@@ -22,12 +22,7 @@ export class ApartadoService {
     private prisma: PrismaService,
   ) {}
 
-  async findAll(
-    companyId?: number,
-    page = 1,
-    limit = 10,
-    status?: string,
-  ) {
+  async findAll(companyId?: number, page = 1, limit = 10, status?: string) {
     this.logger.info('Starting ApartadoService findAll');
     const where: Prisma.ApartadoWhereInput & { companyId?: number } = companyId
       ? { companyId }
@@ -83,11 +78,7 @@ export class ApartadoService {
     }
   }
 
-  async create(
-    data: CreateApartadoDto,
-    companyId?: number,
-    userId?: number,
-  ) {
+  async create(data: CreateApartadoDto, companyId?: number, userId?: number) {
     try {
       this.logger.info('Creating apartado:', { clientId: data.clientId });
 
@@ -137,7 +128,9 @@ export class ApartadoService {
       }
 
       const subtotal =
-        Math.round(items.reduce((sum: number, i: any) => sum + i.subtotal, 0) * 100) / 100;
+        Math.round(
+          items.reduce((sum: number, i: any) => sum + i.subtotal, 0) * 100,
+        ) / 100;
       const tax = Math.round(subtotal * 0.19 * 100) / 100;
       const total = Math.round((subtotal + tax) * 100) / 100;
 
@@ -185,10 +178,9 @@ export class ApartadoService {
           if (error?.code !== 'P2002' || attempt === maxAttempts - 1) {
             throw error;
           }
-          this.logger.warn(
-            'Colisión de número de apartado, reintentando...',
-            { apartadoNumber },
-          );
+          this.logger.warn('Colisión de número de apartado, reintentando...', {
+            apartadoNumber,
+          });
         }
       }
     } catch (error) {
@@ -505,9 +497,7 @@ export class ApartadoService {
       throw new NotFoundException('Apartado no encontrado');
     }
     if (apartado.status !== 'active') {
-      throw new BadRequestException(
-        'El apartado ya está pagado o cancelado',
-      );
+      throw new BadRequestException('El apartado ya está pagado o cancelado');
     }
     return apartado;
   }

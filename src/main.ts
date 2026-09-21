@@ -18,7 +18,8 @@ async function bootstrap() {
   );
 
   const corsOrigins = (
-    process.env.CORS_ORIGINS ?? 'https://zettastock.com,http://localhost:5173'
+    process.env.CORS_ORIGINS ??
+    'https://app.zettastock.com,https://zettastock.com,http://localhost:5173'
   )
     .split(',')
     .map((origin) => origin.trim())
