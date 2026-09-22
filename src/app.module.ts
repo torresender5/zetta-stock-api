@@ -12,6 +12,8 @@ import { SaleModule } from './sale/sale.module';
 import { PurchaseModule } from './purchase/purchase.module';
 import { CashRegisterModule } from './cash-register/cash-register.module';
 import { ApartadoModule } from './apartado/apartado.module';
+import { ReportModule } from './report/report.module';
+import { SubscriptionModule } from './subscription/subscription.module';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { ApartadoModule } from './apartado/apartado.module';
     PurchaseModule,
     CashRegisterModule,
     ApartadoModule,
+    ReportModule,
+    SubscriptionModule,
   ],
   controllers: [],
   providers: [PrismaService],

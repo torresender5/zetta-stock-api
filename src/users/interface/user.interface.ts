@@ -7,6 +7,19 @@ export interface UserCompany {
   address: string | null;
 }
 
+export interface UserSubscriptionPlan {
+  key: string;
+  name: string;
+}
+
+export interface UserSubscription {
+  status: string;
+  period: string;
+  trialEndsAt: Date | null;
+  expiresAt: Date | null;
+  plan?: UserSubscriptionPlan | null;
+}
+
 export interface Users {
   id: number;
   user: string;
@@ -15,6 +28,7 @@ export interface Users {
   role: string;
   companyId: number | null;
   company?: UserCompany | null;
+  subscription?: UserSubscription | null;
   // createdAt DateTime @default(now())
 }
 

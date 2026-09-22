@@ -244,7 +244,7 @@ export class SaleService {
         },
       });
 
-      // Update product stock
+      // Update product stock (handle sizes like purchases)
       for (const item of data.items) {
         const product = await tx.product.findFirst({
           where: {
@@ -255,12 +255,49 @@ export class SaleService {
         if (!product) {
           throw new Error(`Product ${item.productId} not found`);
         }
+
+        const sizeStock = (product.sizes as any[]) ?? [];
+        let updateStock: number;
+        let updateSizes: any;
+
+        if (Array.isArray(sizeStock) && sizeStock.length > 0) {
+          // Product with sizes: require a size per line
+          if (!item.size) {
+            throw new Error(
+              `El producto "${product.name}" requiere seleccionar una talla`,
+            );
+          }
+          const sizeIndex = sizeStock.findIndex((s) => s.size === item.size);
+          if (sizeIndex === -1) {
+            throw new Error(
+              `Talla "${item.size}" no válida para "${product.name}"`,
+            );
+          }
+          updateSizes = sizeStock.map((s, i) =>
+            i === sizeIndex
+              ? {
+                  ...s,
+                  stock: Math.max(
+                    0,
+                    (Number(s.stock) ?? 0) - Number(item.quantity),
+                  ),
+                }
+              : s,
+          );
+          updateStock = updateSizes.reduce(
+            (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
+            0,
+          );
+        } else {
+          updateStock = Number(product.stock) - Number(item.quantity);
+          updateSizes = undefined;
+        }
+
         await tx.product.update({
           where: { id: Number(item.productId) },
           data: {
-            stock: {
-              decrement: Number(item.quantity),
-            },
+            stock: Math.max(0, updateStock),
+            ...(updateSizes !== undefined ? { sizes: updateSizes } : {}),
           },
         });
       }

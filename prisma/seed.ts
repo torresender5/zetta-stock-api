@@ -325,6 +325,165 @@ async function seedAdmin() {
   console.log(`UserAdmin listo: ${email}`);
 }
 
+interface SeedPlan {
+  key: string;
+  name: string;
+  description: string;
+  features: Prisma.InputJsonValue;
+  allowedViews: Prisma.InputJsonValue;
+  priceMonthly: number;
+  priceYearly: number;
+  maxUsers: number;
+  trialDays: number | null;
+  sortOrder: number;
+}
+
+const seedPlansData: SeedPlan[] = [
+  {
+    key: 'free',
+    name: 'Gratis',
+    description:
+      'Plan de prueba para empezar a facturar. Incluye 30 días gratis y las funcionalidades esenciales.',
+    features: [
+      '30 días de prueba gratuita',
+      'Productos y clientes ilimitados',
+      'Ventas e inventario básico',
+      'Facturación',
+      '1 usuario',
+    ],
+    allowedViews: [
+      'dashboard',
+      'products',
+      'clients',
+      'suppliers',
+      'purchases',
+      'sales',
+      'invoices',
+      'accountsPayable',
+      'accountsReceivable',
+      'profile',
+    ],
+    priceMonthly: 0,
+    priceYearly: 0,
+    maxUsers: 1,
+    trialDays: 30,
+    sortOrder: 1,
+  },
+  {
+    key: 'basico',
+    name: 'Básico',
+    description:
+      'Para negocios en crecimiento que necesitan control total de inventario y reportes.',
+    features: [
+      'Todo lo del plan Gratis',
+      'Reportes y análisis',
+      'Caja registradora',
+      'Gestión de usuarios (hasta 3)',
+      'Soporte prioritario',
+    ],
+    allowedViews: [
+      'dashboard',
+      'caja',
+      'products',
+      'clients',
+      'suppliers',
+      'purchases',
+      'sales',
+      'invoices',
+      'accountsPayable',
+      'accountsReceivable',
+      'reports',
+      'users',
+      'profile',
+    ],
+    priceMonthly: 35000,
+    priceYearly: 300000,
+    maxUsers: 3,
+    trialDays: null,
+    sortOrder: 2,
+  },
+  {
+    key: 'pro',
+    name: 'Pro',
+    description:
+      'La solución completa para empresas: apartados, máximo rendimiento y soporte dedicado.',
+    features: [
+      'Todo lo del plan Básico',
+      'Módulo de apartados',
+      'Usuarios ilimitados',
+      'Soporte dedicado 24/7',
+      'Todas las funciones',
+    ],
+    allowedViews: [
+      'dashboard',
+      'caja',
+      'products',
+      'clients',
+      'suppliers',
+      'purchases',
+      'sales',
+      'invoices',
+      'apartados',
+      'accountsPayable',
+      'accountsReceivable',
+      'reports',
+      'users',
+      'profile',
+    ],
+    priceMonthly: 69000,
+    priceYearly: 620000,
+    maxUsers: 10,
+    trialDays: null,
+    sortOrder: 3,
+  },
+];
+
+async function seedPlans() {
+  for (let i = 0; i < seedPlansData.length; i++) {
+    const data = seedPlansData[i];
+    await prisma.plan.upsert({
+      where: { key: data.key },
+      update: {
+        name: data.name,
+        description: data.description,
+        features: data.features,
+        allowedViews: data.allowedViews,
+        priceMonthly: data.priceMonthly,
+        priceYearly: data.priceYearly,
+        maxUsers: data.maxUsers,
+        trialDays: data.trialDays,
+        sortOrder: data.sortOrder,
+        active: true,
+      },
+      create: { ...data },
+    });
+  }
+  console.log(`Planes sincronizados: ${seedPlansData.map((p) => p.key).join(', ')}`);
+}
+
+async function seedAdminSubscription(companyId: number) {
+  const freePlan = await prisma.plan.findUnique({ where: { key: 'free' } });
+  if (!freePlan) return;
+  const existing = await prisma.subscription.findUnique({
+    where: { companyId },
+  });
+  if (!existing) {
+    const trialEndsAt = new Date(Date.now() + freePlan.trialDays! * 86400000);
+    await prisma.subscription.create({
+      data: {
+        companyId,
+        planId: freePlan.id,
+        status: 'active',
+        period: 'trial',
+        price: 0,
+        trialEndsAt,
+        expiresAt: trialEndsAt,
+      },
+    });
+    console.log(`Suscripción de prueba creada para la empresa admin`);
+  }
+}
+
 async function seedProducts(companyId: number) {
   for (let i = 0; i < sourceProducts.length; i++) {
     const data = toProductData(sourceProducts[i], i, companyId);
@@ -341,6 +500,8 @@ async function seedProducts(companyId: number) {
 async function main() {
   const adminCompany = await seedAdminCompany();
   await seedAdmin();
+  await seedPlans();
+  await seedAdminSubscription(adminCompany.id);
   await seedProducts(adminCompany.id);
 }
 

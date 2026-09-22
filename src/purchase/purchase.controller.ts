@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Body,
   Param,
+  Query,
   Inject,
   Req,
 } from '@nestjs/common';
@@ -18,6 +19,7 @@ import { Logger } from 'winston';
 import {
   CreatePurchaseDto,
   UpdatePurchasePaymentStatusDto,
+  PurchaseQueryDto,
 } from './dto/purchase.dto';
 
 @Controller('purchases')
@@ -29,9 +31,12 @@ export class PurchaseController {
 
   @AuthRoles('admin', 'inventario')
   @Get()
-  findAll(@Req() req: Request & { user: AuthUserPayload }) {
+  findAll(
+    @Query() query: PurchaseQueryDto,
+    @Req() req: Request & { user: AuthUserPayload },
+  ) {
     this.logger.info('Starting PurchaseController find all');
-    return this.purchaseService.findAll(req.user?.companyId);
+    return this.purchaseService.findAll(query, req.user?.companyId);
   }
 
   @AuthRoles('admin', 'inventario')

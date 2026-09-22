@@ -1,0 +1,47 @@
+model Plan {
+  id           Int      @id @default(autoincrement())
+  key          String   @unique // free | basico | pro
+  name         String
+  description  String?
+  features     Json? // Lista de beneficios mostrados en el catálogo
+  allowedViews Json? // Lista de vistas (ViewKey) permitidas por este plan
+  priceMonthly Int      @default(0) // COP
+  priceYearly  Int      @default(0) // COP
+  maxUsers     Int      @default(1) // Limite de usuarios por empresa
+  trialDays    Int? // Solo para el plan free (dias de prueba)
+  sortOrder    Int      @default(0)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id          Int       @id @default(autoincrement())
+  companyId   Int       @unique
+  company     Company   @relation(fields: [companyId], references: [id])
+  planId      Int
+  plan        Plan      @relation(fields: [planId], references: [id])
+  status      String    @default("active") // active | expired
+  period      String    @default("trial") // trial | monthly | yearly
+  price       Int       @default(0) // Precio cobrado (snapshot COP)
+  startsAt    DateTime  @default(now())
+  trialEndsAt DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model PaymentOrder {
+  id        Int       @id @default(autoincrement())
+  companyId Int
+  company   Company   @relation(fields: [companyId], references: [id])
+  planKey   String
+  period    String // monthly | yearly
+  amount    Int // COP
+  concept   String
+  status    String    @default("pending") // pending | paid | rejected
+  paidAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}

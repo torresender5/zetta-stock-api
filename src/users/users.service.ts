@@ -22,6 +22,8 @@ const USER_SAFE_SELECT = {
   companyId: true,
 } as const;
 
+const TRIAL_DAYS = 30;
+
 type SafeUserRow = {
   id: number;
   user: string;
@@ -82,6 +84,21 @@ export class UsersService {
   }) {
     if (!data.companyId) {
       throw new BadRequestException('El usuario debe pertenecer a una empresa');
+    }
+    // Validar el límite de usuarios según el plan de la empresa.
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { companyId: data.companyId },
+      include: { plan: true },
+    });
+    if (subscription?.plan?.maxUsers) {
+      const currentCount = await this.prisma.user.count({
+        where: { companyId: data.companyId },
+      });
+      if (currentCount >= subscription.plan.maxUsers) {
+        throw new BadRequestException(
+          `Tu plan permite máximo ${subscription.plan.maxUsers} usuario(s). Mejora tu plan para añadir más.`,
+        );
+      }
     }
     try {
       const hashedPassword = bcrypt.hashSync(data.password, 10);
@@ -180,7 +197,7 @@ export class UsersService {
   }) {
     return this.prisma.$transaction(async (tx) => {
       const company = await tx.company.create({ data: data.companyData });
-      return tx.user.create({
+      const user = await tx.user.create({
         data: {
           user: data.user,
           email: data.email,
@@ -189,16 +206,57 @@ export class UsersService {
           companyId: company.id,
         },
       });
+      // Todo registro nuevo inicia con el plan gratuito (prueba).
+      const freePlan = await tx.plan.findUnique({ where: { key: 'free' } });
+      if (freePlan) {
+        const trialDays = freePlan.trialDays ?? TRIAL_DAYS;
+        const trialEndsAt = new Date(Date.now() + trialDays * 86400000);
+        await tx.subscription.create({
+          data: {
+            companyId: company.id,
+            planId: freePlan.id,
+            status: 'active',
+            period: 'trial',
+            price: 0,
+            trialEndsAt,
+            expiresAt: trialEndsAt,
+          },
+        });
+      }
+      return user;
     });
   }
 
   async findByEmail(email: string): Promise<Users | undefined | null> {
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: {
         email: email,
       },
       include: { company: true },
     });
+    return this.attachSubscription(user);
+  }
+
+  /** Adjunta la suscripción de la empresa al usuario para construir el JWT. */
+  private async attachSubscription(
+    user: Users | null | undefined,
+  ): Promise<Users | null | undefined> {
+    if (user?.companyId) {
+      const subscription = await this.prisma.subscription.findUnique({
+        where: { companyId: user.companyId },
+        include: { plan: true },
+      });
+      if (subscription) {
+        user.subscription = {
+          status: subscription.status,
+          period: subscription.period,
+          trialEndsAt: subscription.trialEndsAt,
+          expiresAt: subscription.expiresAt,
+          plan: subscription.plan ?? null,
+        };
+      }
+    }
+    return user;
   }
 
   async findById(
@@ -217,13 +275,14 @@ export class UsersService {
     id: number,
     companyId?: number,
   ): Promise<Users | undefined | null> {
-    return this.prisma.user.findFirst({
+    const user = await this.prisma.user.findFirst({
       where: {
         id,
         ...(companyId ? { companyId } : {}),
       },
       include: { company: true },
     });
+    return this.attachSubscription(user);
   }
 
   async updateProfile(

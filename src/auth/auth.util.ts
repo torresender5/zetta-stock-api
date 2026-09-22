@@ -13,5 +13,9 @@ export function buildAuthPayload(user: Users): AuthUserPayload {
     companyDocument: user.company?.document ?? null,
     companyPhoneNumber: user.company?.phoneNumber ?? null,
     companyAddress: user.company?.address ?? null,
+    planKey: user.subscription?.plan?.key ?? null,
+    planName: user.subscription?.plan?.name ?? null,
+    subscriptionStatus: user.subscription?.status ?? null,
+    subscriptionExpiresAt: user.subscription?.expiresAt?.toISOString() ?? null,
   };
 }

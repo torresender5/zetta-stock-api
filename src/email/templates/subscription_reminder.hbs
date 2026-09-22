@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZettaStock</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 24px;
+      background-color: #f4f6fa;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: #1e293b;
+    "
+  >
+    <div
+      style="
+        max-width: 480px;
+        margin: 0 auto;
+        background-color: #ffffff;
+        border-radius: 12px;
+        padding: 32px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      "
+    >
+      <h1 style="margin: 0 0 16px; font-size: 20px; color: #1e40af">
+        Tu suscripción de ZettaStock
+      </h1>
+      <p style="font-size: 15px; line-height: 1.5">Hola {{name}},</p>
+      <p style="font-size: 15px; line-height: 1.5">
+        Tu plan <strong>{{plan}}</strong>
+        <strong style="color: #d97706">{{message}}</strong>
+        ({{date}}).
+      </p>
+      <p style="font-size: 15px; line-height: 1.5">
+        Renueva tu plan para seguir facturando y administrando tu negocio sin
+        interrupciones.
+      </p>
+      <p style="margin: 24px 0; text-align: center">
+        <a
+          href="{{url}}"
+          style="
+            display: inline-block;
+            background: linear-gradient(90deg, #7c3aed, #4f46e5);
+            color: #ffffff;
+            padding: 12px 28px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+          "
+        >
+          Verificar mi plan
+        </a>
+      </p>
+      <p style="color: #64748b; font-size: 13px">
+        Si no deseas continuar, no tienes que hacer nada más.
+      </p>
+    </div>
+  </body>
+</html>

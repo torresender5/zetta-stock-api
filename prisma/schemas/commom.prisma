@@ -4,6 +4,7 @@ model User {
   email     String   @unique
   password  String
   role      String   @default("admin") // admin | vendedor | inventario
+  active    Boolean  @default(true)
   createdAt DateTime @default(now())
   companyId Int?
   company   Company? @relation(fields: [companyId], references: [id])
@@ -40,6 +41,7 @@ model Company {
   phoneNumber String?
   address     String?
   description String?
+  active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   users       User[]
@@ -55,6 +57,8 @@ model Company {
   cashMovements  CashMovement[]
   apartados      Apartado[]
   apartadoPayments ApartadoPayment[]
+  subscription   Subscription?
+  paymentOrders  PaymentOrder[]
 }
 
 model Category {

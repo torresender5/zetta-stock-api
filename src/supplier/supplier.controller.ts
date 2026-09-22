@@ -8,6 +8,7 @@ import {
   HttpStatus,
   Body,
   Param,
+  Query,
   Inject,
   Req,
 } from '@nestjs/common';
@@ -16,7 +17,11 @@ import { AuthUserPayload } from '../auth/auth-user.interface';
 import { SupplierService } from './supplier.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
-import { SupplierCreateDto, UpdateSupplierDto } from './dto/supplier.dto';
+import {
+  SupplierCreateDto,
+  UpdateSupplierDto,
+  SupplierQueryDto,
+} from './dto/supplier.dto';
 
 @Controller('suppliers')
 export class SupplierController {
@@ -27,8 +32,19 @@ export class SupplierController {
 
   @AuthRoles('admin', 'inventario')
   @Get()
-  findAll(@Req() req: Request & { user: AuthUserPayload }) {
+  findAll(
+    @Query() query: SupplierQueryDto,
+    @Req() req: Request & { user: AuthUserPayload },
+  ) {
     this.logger.info('Starting SupplierController find all');
+    return this.supplierService.findAllPaginated(query, req.user?.companyId);
+  }
+
+  // Lista completa (sin paginar) para dropdowns del modal de compra.
+  // Debe declararse ANTES de @Get(':id') para no chocar con la ruta 'all'.
+  @AuthRoles('admin', 'inventario')
+  @Get('all')
+  findAllForDropdown(@Req() req: Request & { user: AuthUserPayload }) {
     return this.supplierService.findAll(req.user?.companyId);
   }
 

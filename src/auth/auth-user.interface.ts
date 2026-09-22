@@ -9,4 +9,8 @@ export interface AuthUserPayload {
   companyDocument?: string | null;
   companyPhoneNumber?: string | null;
   companyAddress?: string | null;
+  planKey?: string | null;
+  planName?: string | null;
+  subscriptionStatus?: string | null;
+  subscriptionExpiresAt?: string | null;
 }

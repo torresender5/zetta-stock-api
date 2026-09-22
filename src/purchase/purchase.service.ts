@@ -1,7 +1,13 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
+import { PurchaseQueryDto } from './dto/purchase.dto';
 
 @Injectable()
 export class PurchaseService {
@@ -10,16 +16,73 @@ export class PurchaseService {
     private prisma: PrismaService,
   ) {}
 
-  async findAll(companyId?: number) {
+  async findAll(query: PurchaseQueryDto, companyId?: number) {
     this.logger.info('Starting PurchaseService findAll');
-    return this.prisma.purchase.findMany({
-      where: companyId ? { companyId } : {},
-      include: {
-        items: true,
-        supplier: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+
+    const where: any = {};
+    if (companyId) {
+      where.companyId = companyId;
+    }
+    if (query.supplierId) {
+      where.supplierId = Number(query.supplierId);
+    }
+    if (query.paymentStatus) {
+      where.paymentStatus = query.paymentStatus;
+    }
+    if (query.search) {
+      where.OR = [
+        { supplier: { name: { contains: query.search, mode: 'insensitive' } } },
+        {
+          items: {
+            some: {
+              productName: { contains: query.search, mode: 'insensitive' },
+            },
+          },
+        },
+      ];
+    }
+    if (query.startDate || query.endDate) {
+      where.date = {};
+      if (query.startDate) {
+        where.date.gte = new Date(query.startDate);
+      }
+      if (query.endDate) {
+        const end = new Date(query.endDate);
+        end.setHours(23, 59, 59, 999);
+        where.date.lte = end;
+      }
+    }
+
+    try {
+      const [data, total] = await Promise.all([
+        this.prisma.purchase.findMany({
+          where,
+          skip: (page - 1) * limit,
+          take: limit,
+          include: {
+            items: true,
+            supplier: true,
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.purchase.count({ where }),
+      ]);
+      return {
+        data,
+        meta: {
+          total,
+          page,
+          limit,
+          totalPages: Math.max(1, Math.ceil(total / limit)),
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error finding purchases:', error);
+      throw error;
+    }
   }
 
   async findById(id: number, companyId?: number) {
@@ -51,7 +114,7 @@ export class PurchaseService {
         },
       });
       if (!supplier) {
-        throw new Error('Supplier not found');
+        throw new NotFoundException('Proveedor no encontrado');
       }
 
       // Verify all products belong to the same company
@@ -63,13 +126,15 @@ export class PurchaseService {
           },
         });
         if (!product) {
-          throw new Error(`Product ${item.productId} not found`);
+          throw new NotFoundException(
+            `Producto ${item.productId} no encontrado`,
+          );
         }
       }
 
       // Calculate totals
       const subtotal = data.items.reduce(
-        (sum: number, item: any) => sum + item.subtotal,
+        (sum: number, item: any) => sum + Number(item.subtotal),
         0,
       );
       const tax = Math.round(subtotal * 0.19);
@@ -91,6 +156,7 @@ export class PurchaseService {
               create: data.items.map((item: any) => ({
                 productId: Number(item.productId),
                 productName: item.productName,
+                size: item.size || null,
                 quantity: Number(item.quantity),
                 unitPrice: Number(item.unitPrice),
                 subtotal: Number(item.subtotal),
@@ -103,7 +169,7 @@ export class PurchaseService {
           },
         });
 
-        // Update product stock
+        // Update product stock and purchase price
         for (const item of data.items) {
           const product = await tx.product.findFirst({
             where: {
@@ -112,14 +178,52 @@ export class PurchaseService {
             },
           });
           if (!product) {
-            throw new Error(`Product ${item.productId} not found`);
+            throw new NotFoundException(
+              `Producto ${item.productId} no encontrado`,
+            );
           }
+
+          const sizeStock = (product.sizes as any[]) ?? [];
+          let updateStock: number;
+          let updateSizes: any;
+          const updatePurchasePrice = Number(item.unitPrice);
+
+          if (Array.isArray(sizeStock) && sizeStock.length > 0) {
+            // Product with sizes: require a size per line
+            if (!item.size) {
+              throw new BadRequestException(
+                `El producto "${product.name}" requiere seleccionar una talla`,
+              );
+            }
+            const sizeIndex = sizeStock.findIndex((s) => s.size === item.size);
+            if (sizeIndex === -1) {
+              throw new BadRequestException(
+                `Talla "${item.size}" no válida para "${product.name}"`,
+              );
+            }
+            updateSizes = sizeStock.map((s, i) =>
+              i === sizeIndex
+                ? {
+                    ...s,
+                    stock: (Number(s.stock) ?? 0) + Number(item.quantity),
+                  }
+                : s,
+            );
+            updateStock = updateSizes.reduce(
+              (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
+              0,
+            );
+          } else {
+            updateStock = product.stock + Number(item.quantity);
+            updateSizes = undefined;
+          }
+
           await tx.product.update({
             where: { id: Number(item.productId) },
             data: {
-              stock: {
-                increment: Number(item.quantity),
-              },
+              stock: updateStock,
+              ...(updateSizes !== undefined ? { sizes: updateSizes } : {}),
+              purchasePrice: updatePurchasePrice,
             },
           });
         }
@@ -145,7 +249,7 @@ export class PurchaseService {
         where: { id, ...(companyId ? { companyId } : {}) },
       });
       if (!existing) {
-        throw new Error('Compra no encontrada');
+        throw new NotFoundException('Compra no encontrada');
       }
       return await this.prisma.purchase.update({
         where: { id },
