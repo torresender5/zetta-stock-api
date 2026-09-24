@@ -9,6 +9,7 @@ import {
   IsInt,
   Min,
   Max,
+  IsDateString,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -98,6 +99,37 @@ export class ListSalesQueryDto {
   @Min(1)
   @Max(100)
   limit?: number = 10;
+
+  @ApiPropertyOptional({
+    description: 'Search by client name or product name',
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by payment status',
+    enum: ['paid', 'pending', 'cancelled'],
+  })
+  @IsOptional()
+  @IsString()
+  paymentStatus?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by start date (ISO 8601)',
+    example: '2025-01-01',
+  })
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by end date (ISO 8601)',
+    example: '2025-12-31',
+  })
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
 }
 
 @ApiSchema({ name: 'UpdateSalePaymentStatus' })

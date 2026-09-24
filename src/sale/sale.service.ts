@@ -2,6 +2,7 @@ import { Inject, Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
+import { ListSalesQueryDto } from './dto/sale.dto';
 
 @Injectable()
 export class SaleService {
@@ -10,9 +11,42 @@ export class SaleService {
     private prisma: PrismaService,
   ) {}
 
-  async findAll(companyId?: number, page = 1, limit = 10) {
+  async findAll(companyId?: number, query?: ListSalesQueryDto) {
     this.logger.info('Starting SaleService findAll');
-    const where = companyId ? { companyId } : {};
+    const page = query?.page ?? 1;
+    const limit = query?.limit ?? 10;
+
+    const where: any = {};
+    if (companyId) {
+      where.companyId = companyId;
+    }
+    if (query?.paymentStatus) {
+      where.paymentStatus = query.paymentStatus;
+    }
+    if (query?.search) {
+      where.OR = [
+        { client: { name: { contains: query.search, mode: 'insensitive' } } },
+        {
+          items: {
+            some: {
+              productName: { contains: query.search, mode: 'insensitive' },
+            },
+          },
+        },
+      ];
+    }
+    if (query?.startDate || query?.endDate) {
+      where.date = {};
+      if (query?.startDate) {
+        where.date.gte = new Date(query.startDate);
+      }
+      if (query?.endDate) {
+        const end = new Date(query.endDate);
+        end.setHours(23, 59, 59, 999);
+        where.date.lte = end;
+      }
+    }
+
     try {
       const [data, total] = await Promise.all([
         this.prisma.sale.findMany({

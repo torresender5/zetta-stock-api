@@ -52,7 +52,7 @@ export class ReportController {
   async sales(
     @Query() query: ReportQueryDto,
     @Req() req: Request & { user: AuthUserPayload },
-    @Res() res: Response,
+    @Res({ passthrough: true }) res: Response,
   ) {
     this.logger.info('Starting ReportController sales');
     const result = await this.reportService.salesSummary(
@@ -60,6 +60,7 @@ export class ReportController {
       query.startDate,
       query.endDate,
       query.export,
+      req.user?.companyName,
     );
     return this.reply(res, result, 'reporte-ventas', query.export);
   }
@@ -70,7 +71,7 @@ export class ReportController {
   async topProducts(
     @Query() query: ReportQueryDto,
     @Req() req: Request & { user: AuthUserPayload },
-    @Res() res: Response,
+    @Res({ passthrough: true }) res: Response,
   ) {
     this.logger.info('Starting ReportController top products');
     const result = await this.reportService.topProducts(
@@ -78,6 +79,7 @@ export class ReportController {
       query.startDate,
       query.endDate,
       query.export,
+      req.user?.companyName,
     );
     return this.reply(res, result, 'productos-mas-vendidos', query.export);
   }
@@ -88,7 +90,7 @@ export class ReportController {
   async purchases(
     @Query() query: ReportQueryDto,
     @Req() req: Request & { user: AuthUserPayload },
-    @Res() res: Response,
+    @Res({ passthrough: true }) res: Response,
   ) {
     this.logger.info('Starting ReportController purchases');
     const result = await this.reportService.purchasesSummary(
@@ -96,6 +98,7 @@ export class ReportController {
       query.startDate,
       query.endDate,
       query.export,
+      req.user?.companyName,
     );
     return this.reply(res, result, 'reporte-compras', query.export);
   }
@@ -106,12 +109,13 @@ export class ReportController {
   async inventory(
     @Query() query: ReportQueryDto,
     @Req() req: Request & { user: AuthUserPayload },
-    @Res() res: Response,
+    @Res({ passthrough: true }) res: Response,
   ) {
     this.logger.info('Starting ReportController inventory');
     const result = await this.reportService.inventoryReport(
       req.user?.companyId,
       query.export,
+      req.user?.companyName,
     );
     return this.reply(res, result, 'reporte-inventario', query.export);
   }
@@ -122,7 +126,7 @@ export class ReportController {
   async cashRegisters(
     @Query() query: ReportQueryDto,
     @Req() req: Request & { user: AuthUserPayload },
-    @Res() res: Response,
+    @Res({ passthrough: true }) res: Response,
   ) {
     this.logger.info('Starting ReportController cash registers');
     const result = await this.reportService.cashRegisterReport(
@@ -130,6 +134,7 @@ export class ReportController {
       query.startDate,
       query.endDate,
       query.export,
+      req.user?.companyName,
     );
     return this.reply(res, result, 'reporte-caja', query.export);
   }
@@ -140,7 +145,7 @@ export class ReportController {
   async receivables(
     @Query() query: PaymentsReportQueryDto,
     @Req() req: Request & { user: AuthUserPayload },
-    @Res() res: Response,
+    @Res({ passthrough: true }) res: Response,
   ) {
     this.logger.info('Starting ReportController accounts receivable');
     const result = await this.reportService.receivablesReport(
@@ -149,6 +154,7 @@ export class ReportController {
       query.startDate,
       query.endDate,
       query.export,
+      req.user?.companyName,
     );
     return this.reply(res, result, 'cuentas-por-cobrar', query.export);
   }
@@ -159,7 +165,7 @@ export class ReportController {
   async payables(
     @Query() query: PaymentsReportQueryDto,
     @Req() req: Request & { user: AuthUserPayload },
-    @Res() res: Response,
+    @Res({ passthrough: true }) res: Response,
   ) {
     this.logger.info('Starting ReportController accounts payable');
     const result = await this.reportService.payablesReport(
@@ -168,6 +174,7 @@ export class ReportController {
       query.startDate,
       query.endDate,
       query.export,
+      req.user?.companyName,
     );
     return this.reply(res, result, 'cuentas-por-pagar', query.export);
   }
@@ -178,12 +185,13 @@ export class ReportController {
   async apartados(
     @Query() query: ReportQueryDto,
     @Req() req: Request & { user: AuthUserPayload },
-    @Res() res: Response,
+    @Res({ passthrough: true }) res: Response,
   ) {
     this.logger.info('Starting ReportController apartados');
     const result = await this.reportService.apartadosReport(
       req.user?.companyId,
       query.export,
+      req.user?.companyName,
     );
     return this.reply(res, result, 'reporte-apartados', query.export);
   }

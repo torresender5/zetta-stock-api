@@ -37,11 +37,7 @@ export class SaleController {
     @Req() req: Request & { user: AuthUserPayload },
   ) {
     this.logger.info('Starting SaleController find all');
-    return this.saleService.findAll(
-      req.user?.companyId,
-      query.page ?? 1,
-      query.limit ?? 10,
-    );
+    return this.saleService.findAll(req.user?.companyId, query);
   }
 
   @AuthRoles('admin', 'vendedor')

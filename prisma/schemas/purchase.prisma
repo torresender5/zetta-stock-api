@@ -1,16 +1,19 @@
 model Purchase {
-  id              Int            @id @default(autoincrement())
-  companyId       Int?
-  company         Company?       @relation(fields: [companyId], references: [id])
-  supplierId      Int
-  supplier        Supplier       @relation(fields: [supplierId], references: [id])
-  date            DateTime
-  subtotal        Float
-  tax             Float
-  total           Float
-  paymentStatus   String         @default("pending")
-  createdAt       DateTime       @default(now())
-  items           PurchaseItem[]
+  id             Int            @id @default(autoincrement())
+  companyId      Int?
+  company        Company?       @relation(fields: [companyId], references: [id])
+  purchaseNumber String?
+  supplierId     Int
+  supplier       Supplier       @relation(fields: [supplierId], references: [id])
+  date           DateTime
+  subtotal       Float
+  tax            Float
+  total          Float
+  paymentStatus  String         @default("pending")
+  createdAt      DateTime       @default(now())
+  items          PurchaseItem[]
+
+  @@unique([companyId, purchaseNumber])
 }
 
 model PurchaseItem {

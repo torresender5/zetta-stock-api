@@ -5,8 +5,12 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import {
   exportToXlsx,
   exportToPdf,
+  ExportTable,
   ExportColumn,
   ExportRow,
+  ExportMetaItem,
+  ExportChart,
+  ExportChartItem,
 } from './report-export.util';
 import {
   SalesSummary,
@@ -20,6 +24,22 @@ import {
 } from './interface/report.interface';
 
 export type ReportFormat = 'xlsx' | 'pdf';
+
+type ExportOptions = Pick<ExportTable, 'company' | 'meta' | 'charts'>;
+
+const STATUS_LABELS: Record<string, string> = {
+  paid: 'Pagado',
+  pending: 'Pendiente',
+  cancelled: 'Cancelado',
+  active: 'Activo',
+};
+
+const METHOD_LABELS: Record<string, string> = {
+  cash: 'Efectivo',
+  transfer: 'Transferencia',
+  card: 'Tarjeta',
+  credit: 'Crédito',
+};
 
 @Injectable()
 export class ReportService {
@@ -48,16 +68,36 @@ export class ReportService {
     return Math.round(value * 100) / 100;
   }
 
+  private mapTotals(
+    record: Record<string, number>,
+    labels: Record<string, string>,
+  ): ExportChartItem[] {
+    return Object.entries(record)
+      .map(([key, value]) => ({
+        label: labels[key] ?? key.charAt(0).toUpperCase() + key.slice(1),
+        value: this.round(value),
+        money: true,
+      }))
+      .filter((item) => item.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }
+
   private async buildExport(
     columns: ExportColumn[],
     rows: ExportRow[],
     titles: Record<ReportFormat, string>,
     format?: ReportFormat,
+    options: ExportOptions = {},
   ) {
     if (!format) {
       return null;
     }
-    const table = { title: titles[format], columns, rows };
+    const table: ExportTable = {
+      title: titles[format],
+      columns,
+      rows,
+      ...options,
+    };
     if (format === 'xlsx') {
       return exportToXlsx(table);
     }
@@ -69,6 +109,7 @@ export class ReportService {
     startDate?: string,
     endDate?: string,
     format?: ReportFormat,
+    companyName?: string,
   ): Promise<SalesSummary | Buffer | null> {
     this.logger.info('Generating sales summary report');
     const where = {
@@ -151,6 +192,29 @@ export class ReportService {
         byPeriod.map((row) => ({ ...row })),
         { xlsx: 'Reporte de Ventas', pdf: 'Reporte de Ventas' },
         format,
+        {
+          company: companyName,
+          meta: [
+            {
+              label: 'Total ventas',
+              value: this.round(totalSales),
+              money: true,
+            },
+            { label: 'Nº ventas', value: totalCount },
+            { label: 'Subtotal', value: this.round(subtotal), money: true },
+            { label: 'IVA', value: this.round(tax), money: true },
+          ],
+          charts: [
+            {
+              title: 'Ingresos por Estado',
+              items: this.mapTotals(byPaymentStatus, STATUS_LABELS),
+            },
+            {
+              title: 'Ingresos por Método de Pago',
+              items: this.mapTotals(byPaymentMethod, METHOD_LABELS),
+            },
+          ],
+        },
       )) ?? report
     );
   }
@@ -160,6 +224,7 @@ export class ReportService {
     startDate?: string,
     endDate?: string,
     format?: ReportFormat,
+    companyName?: string,
   ): Promise<TopProductRow[] | Buffer | null> {
     this.logger.info('Generating top products report');
     const where = {
@@ -191,6 +256,34 @@ export class ReportService {
 
     const rows = [...map.values()].sort((a, b) => b.quantity - a.quantity);
 
+    const meta: ExportMetaItem[] = [
+      {
+        label: 'Total ingresos',
+        value: this.round(rows.reduce((sum, row) => sum + row.revenue, 0)),
+        money: true,
+      },
+      {
+        label: 'Unidades vendidas',
+        value: rows.reduce((sum, row) => sum + row.quantity, 0),
+      },
+      { label: 'Productos', value: rows.length },
+      { label: 'Top producto', value: rows[0]?.name ?? '—' },
+    ];
+
+    const charts: ExportChart[] = [
+      {
+        title: 'Ingresos por Producto',
+        items: rows
+          .slice(0, 8)
+          .map((row) => ({
+            label: row.name,
+            value: this.round(row.revenue),
+            money: true,
+          }))
+          .filter((item) => item.value > 0),
+      },
+    ];
+
     return (
       (await this.buildExport(
         [
@@ -201,6 +294,7 @@ export class ReportService {
         rows.map((row) => ({ ...row })),
         { xlsx: 'Productos Más Vendidos', pdf: 'Productos Más Vendidos' },
         format,
+        { company: companyName, meta, charts },
       )) ?? rows
     );
   }
@@ -210,6 +304,7 @@ export class ReportService {
     startDate?: string,
     endDate?: string,
     format?: ReportFormat,
+    companyName?: string,
   ): Promise<PurchasesSummary | Buffer | null> {
     this.logger.info('Generating purchases summary report');
     const where = {
@@ -273,6 +368,25 @@ export class ReportService {
         bySupplier.map((row) => ({ ...row })),
         { xlsx: 'Reporte de Compras', pdf: 'Reporte de Compras' },
         format,
+        {
+          company: companyName,
+          meta: [
+            {
+              label: 'Total compras',
+              value: this.round(totalPurchases),
+              money: true,
+            },
+            { label: 'Nº compras', value: purchases.length },
+            { label: 'Subtotal', value: this.round(subtotal), money: true },
+            { label: 'IVA', value: this.round(tax), money: true },
+          ],
+          charts: [
+            {
+              title: 'Compras por Estado',
+              items: this.mapTotals(byPaymentStatus, STATUS_LABELS),
+            },
+          ],
+        },
       )) ?? report
     );
   }
@@ -280,6 +394,7 @@ export class ReportService {
   async inventoryReport(
     companyId: number | undefined,
     format?: ReportFormat,
+    companyName?: string,
   ): Promise<InventoryReport | Buffer | null> {
     this.logger.info('Generating inventory report');
     const products = await this.prisma.product.findMany({
@@ -308,6 +423,26 @@ export class ReportService {
       lowStockCount: rows.filter((row) => row.lowStock).length,
     };
 
+    const byCategory = new Map<string, number>();
+    for (const row of rows) {
+      const category = row.category || 'Sin categoría';
+      byCategory.set(
+        category,
+        this.round((byCategory.get(category) ?? 0) + row.stockValue),
+      );
+    }
+
+    const charts: ExportChart[] = [
+      {
+        title: 'Valor de Inventario por Categoría',
+        items: [...byCategory.entries()]
+          .map(([label, value]) => ({ label, value, money: true }))
+          .filter((item) => item.value > 0)
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 8),
+      },
+    ];
+
     return (
       (await this.buildExport(
         [
@@ -328,6 +463,20 @@ export class ReportService {
         })),
         { xlsx: 'Reporte de Inventario', pdf: 'Reporte de Inventario' },
         format,
+        {
+          company: companyName,
+          meta: [
+            { label: 'Productos', value: report.totalItems },
+            { label: 'Unidades en stock', value: report.totalStock },
+            {
+              label: 'Valor en costo',
+              value: report.totalStockValue,
+              money: true,
+            },
+            { label: 'Bajo stock', value: report.lowStockCount },
+          ],
+          charts,
+        },
       )) ?? report
     );
   }
@@ -337,6 +486,7 @@ export class ReportService {
     startDate?: string,
     endDate?: string,
     format?: ReportFormat,
+    companyName?: string,
   ): Promise<
     { cashRegisters: CashRegisterReportRow[]; count: number } | Buffer | null
   > {
@@ -369,6 +519,34 @@ export class ReportService {
 
     const report = { cashRegisters, count: cashRegisters.length };
 
+    const baseTotal = cashRegisters.reduce(
+      (sum, row) => sum + row.baseAmount,
+      0,
+    );
+    const expectedTotal = cashRegisters.reduce(
+      (sum, row) => sum + (row.expectedTotal ?? 0),
+      0,
+    );
+    const differenceTotal = cashRegisters.reduce(
+      (sum, row) => sum + (row.difference ?? 0),
+      0,
+    );
+
+    const charts: ExportChart[] = [
+      {
+        title: 'Esperado por Caja',
+        items: cashRegisters
+          .map((row) => ({
+            label: row.name,
+            value: this.round(row.expectedTotal ?? 0),
+            money: true,
+          }))
+          .filter((item) => item.value > 0)
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 8),
+      },
+    ];
+
     return (
       (await this.buildExport(
         [
@@ -391,6 +569,24 @@ export class ReportService {
         })),
         { xlsx: 'Reporte de Caja', pdf: 'Reporte de Caja' },
         format,
+        {
+          company: companyName,
+          meta: [
+            { label: 'Cajas', value: report.count },
+            { label: 'Base total', value: this.round(baseTotal), money: true },
+            {
+              label: 'Esperado total',
+              value: this.round(expectedTotal),
+              money: true,
+            },
+            {
+              label: 'Diferencia',
+              value: this.round(differenceTotal),
+              money: true,
+            },
+          ],
+          charts,
+        },
       )) ?? report
     );
   }
@@ -404,25 +600,28 @@ export class ReportService {
     endDate?: string,
   ): Promise<AgingRow[]> {
     const nameField = table === 'sale' ? 'clientId' : 'supplierId';
+    const tableName = table === 'sale' ? 'Sale' : 'Purchase';
     const filter: string[] = [];
-    const params: unknown[] = [companyId ?? null, status];
-    let paramIndex = 3;
+    const params: unknown[] = [];
+    let paramIndex = 1;
+
+    if (companyId !== undefined) {
+      filter.push(`t."companyId" = $${paramIndex++}`);
+      params.push(companyId);
+    }
+    filter.push(`t."paymentStatus" = $${paramIndex++}`);
+    params.push(status);
 
     if (startDate) {
-      filter.push(`"date" >= $${paramIndex++}::date`);
+      filter.push(`t."date" >= $${paramIndex++}::date`);
       params.push(startDate);
     }
     if (endDate) {
-      filter.push(`"date" <= ($${paramIndex++}::date + interval '1 day')`);
+      filter.push(`t."date" <= ($${paramIndex++}::date + interval '1 day')`);
       params.push(endDate);
     }
 
-    const whereSql = [
-      `(${nameField === 'clientId' ? '"clientId"' : '"supplierId"'}) IS NOT NULL`,
-      `"companyId" = $1`,
-      `"paymentStatus" = $2`,
-      ...filter,
-    ].join(' AND ');
+    const whereSql = [`t."${nameField}" IS NOT NULL`, ...filter].join(' AND ');
 
     const rows = await this.prisma.$queryRawUnsafe<
       Array<{
@@ -445,9 +644,9 @@ export class ReportService {
         COALESCE(SUM(CASE WHEN (CURRENT_DATE - t."date"::date) BETWEEN 31 AND 60 THEN t.total ELSE 0 END), 0)::float AS "days30",
         COALESCE(SUM(CASE WHEN (CURRENT_DATE - t."date"::date) BETWEEN 61 AND 90 THEN t.total ELSE 0 END), 0)::float AS "days60",
         COALESCE(SUM(CASE WHEN (CURRENT_DATE - t."date"::date) > 90 THEN t.total ELSE 0 END), 0)::float AS "days90"
-      FROM "${table}" t
+      FROM "${tableName}" t
       JOIN "${nameField === 'clientId' ? 'Client' : 'Supplier'}" e
-        ON e.id = t.${nameField}
+        ON e.id = t."${nameField}"
       WHERE ${whereSql}
       GROUP BY e.id, e.name
       ORDER BY total DESC`,
@@ -472,6 +671,7 @@ export class ReportService {
     startDate?: string,
     endDate?: string,
     format?: ReportFormat,
+    companyName?: string,
   ): Promise<
     | { startDate: string; endDate: string; rows: AgingRow[]; total: number }
     | Buffer
@@ -495,6 +695,9 @@ export class ReportService {
       total: this.round(rows.reduce((sum, row) => sum + row.total, 0)),
     };
 
+    const agingMoney = (key: keyof AgingRow): number =>
+      this.round(rows.reduce((sum, row) => sum + Number(row[key] ?? 0), 0));
+
     return (
       (await this.buildExport(
         [
@@ -509,6 +712,26 @@ export class ReportService {
         rows.map((row) => ({ ...row })),
         { xlsx: 'Cuentas por Cobrar', pdf: 'Cuentas por Cobrar' },
         format,
+        {
+          company: companyName,
+          meta: [
+            { label: 'Total por Cobrar', value: report.total, money: true },
+            { label: 'Nº Clientes', value: rows.length },
+            { label: 'Saldo 31-60d', value: agingMoney('days30'), money: true },
+            { label: 'Saldo +90d', value: agingMoney('days90'), money: true },
+          ],
+          charts: [
+            {
+              title: 'Antigüedad de Deudas',
+              items: [
+                { label: 'Hoy-30', value: agingMoney('current'), money: true },
+                { label: '31-60', value: agingMoney('days30'), money: true },
+                { label: '61-90', value: agingMoney('days60'), money: true },
+                { label: '+90', value: agingMoney('days90'), money: true },
+              ],
+            },
+          ],
+        },
       )) ?? report
     );
   }
@@ -519,6 +742,7 @@ export class ReportService {
     startDate?: string,
     endDate?: string,
     format?: ReportFormat,
+    companyName?: string,
   ): Promise<
     | { startDate: string; endDate: string; rows: AgingRow[]; total: number }
     | Buffer
@@ -542,6 +766,9 @@ export class ReportService {
       total: this.round(rows.reduce((sum, row) => sum + row.total, 0)),
     };
 
+    const agingMoney = (key: keyof AgingRow): number =>
+      this.round(rows.reduce((sum, row) => sum + Number(row[key] ?? 0), 0));
+
     return (
       (await this.buildExport(
         [
@@ -556,6 +783,26 @@ export class ReportService {
         rows.map((row) => ({ ...row })),
         { xlsx: 'Cuentas por Pagar', pdf: 'Cuentas por Pagar' },
         format,
+        {
+          company: companyName,
+          meta: [
+            { label: 'Total por Pagar', value: report.total, money: true },
+            { label: 'Nº Proveedores', value: rows.length },
+            { label: 'Saldo 31-60d', value: agingMoney('days30'), money: true },
+            { label: 'Saldo +90d', value: agingMoney('days90'), money: true },
+          ],
+          charts: [
+            {
+              title: 'Antigüedad de Deudas',
+              items: [
+                { label: 'Hoy-30', value: agingMoney('current'), money: true },
+                { label: '31-60', value: agingMoney('days30'), money: true },
+                { label: '61-90', value: agingMoney('days60'), money: true },
+                { label: '+90', value: agingMoney('days90'), money: true },
+              ],
+            },
+          ],
+        },
       )) ?? report
     );
   }
@@ -563,6 +810,7 @@ export class ReportService {
   async apartadosReport(
     companyId: number | undefined,
     format?: ReportFormat,
+    companyName?: string,
   ): Promise<ApartadoReport | Buffer | null> {
     this.logger.info('Generating apartados report');
     const apartados = await this.prisma.apartado.findMany({
@@ -597,6 +845,8 @@ export class ReportService {
       ),
     };
 
+    const paid = rows.filter((row) => row.status === 'paid').length;
+
     return (
       (await this.buildExport(
         [
@@ -611,6 +861,28 @@ export class ReportService {
         rows.map((row) => ({ ...row })),
         { xlsx: 'Reporte de Apartados', pdf: 'Reporte de Apartados' },
         format,
+        {
+          company: companyName,
+          meta: [
+            { label: 'Apartados Activos', value: report.totalActive },
+            { label: 'Apartados Pagados', value: paid },
+            { label: 'Nº Apartados', value: rows.length },
+            { label: 'Saldo Total', value: report.totalBalance, money: true },
+          ],
+          charts: [
+            {
+              title: 'Saldo por Cliente',
+              items: rows
+                .filter((row) => row.status === 'active')
+                .slice(0, 8)
+                .map((row) => ({
+                  label: row.client,
+                  value: row.balance,
+                  money: true,
+                })),
+            },
+          ],
+        },
       )) ?? report
     );
   }

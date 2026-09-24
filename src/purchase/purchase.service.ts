@@ -140,102 +140,144 @@ export class PurchaseService {
       const tax = Math.round(subtotal * 0.19);
       const total = subtotal + tax;
 
-      // Create purchase with items in a transaction
-      const result = await this.prisma.$transaction(async (tx) => {
-        // Create the purchase
-        const purchase = await tx.purchase.create({
-          data: {
+      // Generate sequential purchase number per company and year, retrying on
+      // unique constraint collisions caused by concurrent creations
+      const maxAttempts = 5;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const year = new Date().getFullYear();
+        const seq =
+          (await this.prisma.purchase.count({
+            where: {
+              ...(companyId ? { companyId } : {}),
+              date: { gte: new Date(`${year}-01-01`) },
+            },
+          })) + 1;
+        const purchaseNumber = `COMP-${year}-${String(seq).padStart(4, '0')}`;
+        try {
+          return await this.createWithPurchaseNumber(
+            data,
             companyId,
-            supplierId: Number(data.supplierId),
-            date: new Date(data.date),
             subtotal,
             tax,
             total,
-            paymentStatus: data.paymentStatus,
-            items: {
-              create: data.items.map((item: any) => ({
-                productId: Number(item.productId),
-                productName: item.productName,
-                size: item.size || null,
-                quantity: Number(item.quantity),
-                unitPrice: Number(item.unitPrice),
-                subtotal: Number(item.subtotal),
-              })),
-            },
-          },
-          include: {
-            items: true,
-            supplier: true,
-          },
-        });
-
-        // Update product stock and purchase price
-        for (const item of data.items) {
-          const product = await tx.product.findFirst({
-            where: {
-              id: Number(item.productId),
-              ...(companyId ? { companyId } : {}),
-            },
-          });
-          if (!product) {
-            throw new NotFoundException(
-              `Producto ${item.productId} no encontrado`,
-            );
+            purchaseNumber,
+          );
+        } catch (error: any) {
+          if (error?.code !== 'P2002' || attempt === maxAttempts - 1) {
+            throw error;
           }
-
-          const sizeStock = (product.sizes as any[]) ?? [];
-          let updateStock: number;
-          let updateSizes: any;
-          const updatePurchasePrice = Number(item.unitPrice);
-
-          if (Array.isArray(sizeStock) && sizeStock.length > 0) {
-            // Product with sizes: require a size per line
-            if (!item.size) {
-              throw new BadRequestException(
-                `El producto "${product.name}" requiere seleccionar una talla`,
-              );
-            }
-            const sizeIndex = sizeStock.findIndex((s) => s.size === item.size);
-            if (sizeIndex === -1) {
-              throw new BadRequestException(
-                `Talla "${item.size}" no válida para "${product.name}"`,
-              );
-            }
-            updateSizes = sizeStock.map((s, i) =>
-              i === sizeIndex
-                ? {
-                    ...s,
-                    stock: (Number(s.stock) ?? 0) + Number(item.quantity),
-                  }
-                : s,
-            );
-            updateStock = updateSizes.reduce(
-              (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
-              0,
-            );
-          } else {
-            updateStock = product.stock + Number(item.quantity);
-            updateSizes = undefined;
-          }
-
-          await tx.product.update({
-            where: { id: Number(item.productId) },
-            data: {
-              stock: updateStock,
-              ...(updateSizes !== undefined ? { sizes: updateSizes } : {}),
-              purchasePrice: updatePurchasePrice,
-            },
+          this.logger.warn('Colisión de código de compra, reintentando...', {
+            purchaseNumber,
           });
         }
-
-        return purchase;
-      });
-
-      return result;
+      }
     } catch (error) {
       this.logger.error('Error creating purchase:', error);
       throw error;
     }
+  }
+
+  private async createWithPurchaseNumber(
+    data: any,
+    companyId: number | undefined,
+    subtotal: number,
+    tax: number,
+    total: number,
+    purchaseNumber: string,
+  ) {
+    // Create purchase with items in a transaction
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Create the purchase
+      const purchase = await tx.purchase.create({
+        data: {
+          companyId,
+          purchaseNumber,
+          supplierId: Number(data.supplierId),
+          date: new Date(data.date),
+          subtotal,
+          tax,
+          total,
+          paymentStatus: data.paymentStatus,
+          items: {
+            create: data.items.map((item: any) => ({
+              productId: Number(item.productId),
+              productName: item.productName,
+              size: item.size || null,
+              quantity: Number(item.quantity),
+              unitPrice: Number(item.unitPrice),
+              subtotal: Number(item.subtotal),
+            })),
+          },
+        },
+        include: {
+          items: true,
+          supplier: true,
+        },
+      });
+
+      // Update product stock and purchase price
+      for (const item of data.items) {
+        const product = await tx.product.findFirst({
+          where: {
+            id: Number(item.productId),
+            ...(companyId ? { companyId } : {}),
+          },
+        });
+        if (!product) {
+          throw new NotFoundException(
+            `Producto ${item.productId} no encontrado`,
+          );
+        }
+
+        const sizeStock = (product.sizes as any[]) ?? [];
+        let updateStock: number;
+        let updateSizes: any;
+        const updatePurchasePrice = Number(item.unitPrice);
+
+        if (Array.isArray(sizeStock) && sizeStock.length > 0) {
+          // Product with sizes: require a size per line
+          if (!item.size) {
+            throw new BadRequestException(
+              `El producto "${product.name}" requiere seleccionar una talla`,
+            );
+          }
+          const sizeIndex = sizeStock.findIndex((s) => s.size === item.size);
+          if (sizeIndex === -1) {
+            throw new BadRequestException(
+              `Talla "${item.size}" no válida para "${product.name}"`,
+            );
+          }
+          updateSizes = sizeStock.map((s, i) =>
+            i === sizeIndex
+              ? {
+                  ...s,
+                  stock: (Number(s.stock) ?? 0) + Number(item.quantity),
+                }
+              : s,
+          );
+          updateStock = updateSizes.reduce(
+            (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
+            0,
+          );
+        } else {
+          updateStock = product.stock + Number(item.quantity);
+          updateSizes = undefined;
+        }
+
+        await tx.product.update({
+          where: { id: Number(item.productId) },
+          data: {
+            stock: updateStock,
+            ...(updateSizes !== undefined ? { sizes: updateSizes } : {}),
+            purchasePrice: updatePurchasePrice,
+          },
+        });
+      }
+
+      return purchase;
+    });
+
+    return result;
   }
 
   async updatePaymentStatus(

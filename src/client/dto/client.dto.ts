@@ -1,6 +1,15 @@
-import { ApiProperty, ApiSchema } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEmail } from 'class-validator';
+import { ApiProperty, ApiSchema, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsString,
+  IsOptional,
+  IsEmail,
+  IsInt,
+  Min,
+  Max,
+  IsDateString,
+} from 'class-validator';
 import { PartialType } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 @ApiSchema({ name: 'CreateClient' })
 export class ClientCreateDto {
@@ -26,3 +35,44 @@ export class ClientCreateDto {
 }
 
 export class UpdateClientDto extends PartialType(ClientCreateDto) {}
+
+@ApiSchema({ name: 'ClientQuery' })
+export class ClientQueryDto {
+  @ApiPropertyOptional({ description: 'Page number (1-based)', default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ description: 'Items per page', default: 10 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 10;
+
+  @ApiPropertyOptional({
+    description: 'Search by name, document, email or phone',
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by start date (ISO 8601)',
+    example: '2025-01-01',
+  })
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by end date (ISO 8601)',
+    example: '2025-12-31',
+  })
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+}

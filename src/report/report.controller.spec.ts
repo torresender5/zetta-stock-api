@@ -100,6 +100,7 @@ describe('ReportController', () => {
       '2026-01-01',
       '2026-01-31',
       undefined,
+      undefined,
     );
   });
 
@@ -135,6 +136,10 @@ describe('ReportController', () => {
     );
 
     expect(result).toEqual({ totalItems: 0 });
-    expect(service.inventoryReport).toHaveBeenCalledWith(7, undefined);
+    expect(service.inventoryReport).toHaveBeenCalledWith(
+      7,
+      undefined,
+      undefined,
+    );
   });
 });

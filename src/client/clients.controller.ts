@@ -9,12 +9,17 @@ import {
   HttpStatus,
   Inject,
   Param,
+  Query,
   Req,
 } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 import { AuthRoles } from '../auth/auth-roles.decorator';
 import { AuthUserPayload } from '../auth/auth-user.interface';
-import { ClientCreateDto, UpdateClientDto } from './dto/client.dto';
+import {
+  ClientCreateDto,
+  UpdateClientDto,
+  ClientQueryDto,
+} from './dto/client.dto';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 
@@ -27,10 +32,23 @@ export class ClientsController {
 
   @AuthRoles('admin', 'vendedor')
   @Get()
-  findAll(@Req() req: Request & { user: AuthUserPayload }) {
+  findAll(
+    @Query() query: ClientQueryDto,
+    @Req() req: Request & { user: AuthUserPayload },
+  ) {
     this.logger.info('Starting ClientsController find all');
-    return this.clientService.findAll(req.user?.companyId);
+    return this.clientService.findAll(query, req.user?.companyId);
   }
+
+  // Lista completa (sin paginar) para dropdowns del modal de venta.
+  // Debe declararse ANTES de @Get(':id') para no chocar con la ruta 'all'.
+  @AuthRoles('admin', 'vendedor')
+  @Get('all')
+  findAllForDropdown(@Req() req: Request & { user: AuthUserPayload }) {
+    this.logger.info('Starting ClientsController find all for dropdown');
+    return this.clientService.findAllDropdown(req.user?.companyId);
+  }
+
   @AuthRoles('admin', 'vendedor')
   @Get(':id')
   findOne(

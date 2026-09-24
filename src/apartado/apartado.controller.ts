@@ -37,12 +37,7 @@ export class ApartadoController {
     @Req() req: Request & { user: AuthUserPayload },
   ) {
     this.logger.info('Starting ApartadoController find all');
-    return this.apartadoService.findAll(
-      req.user?.companyId,
-      query.page ?? 1,
-      query.limit ?? 10,
-      query.status,
-    );
+    return this.apartadoService.findAll(req.user?.companyId, query);
   }
 
   @AuthRoles('admin', 'vendedor')

@@ -13,6 +13,7 @@ import {
   AddApartadoPaymentDto,
   CancelApartadoDto,
   CompleteApartadoDto,
+  ListApartadosQueryDto,
 } from './apartado.dto';
 
 @Injectable()
@@ -22,13 +23,26 @@ export class ApartadoService {
     private prisma: PrismaService,
   ) {}
 
-  async findAll(companyId?: number, page = 1, limit = 10, status?: string) {
+  async findAll(companyId?: number, query: ListApartadosQueryDto = {}) {
     this.logger.info('Starting ApartadoService findAll');
+    const { page = 1, limit = 10, status, search, startDate, endDate } = query;
     const where: Prisma.ApartadoWhereInput & { companyId?: number } = companyId
       ? { companyId }
       : {};
     if (status) {
       where.status = status;
+    }
+    if (search) {
+      where.OR = [
+        { apartadoNumber: { contains: search } },
+        { client: { name: { contains: search } } },
+      ];
+    }
+    if (startDate || endDate) {
+      where.date = {
+        ...(startDate ? { gte: new Date(`${startDate}T00:00:00.000Z`) } : {}),
+        ...(endDate ? { lte: new Date(`${endDate}T23:59:59.999Z`) } : {}),
+      };
     }
     try {
       const [data, total] = await Promise.all([
