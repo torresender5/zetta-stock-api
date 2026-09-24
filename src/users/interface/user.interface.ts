@@ -5,6 +5,7 @@ export interface UserCompany {
   document: string | null;
   phoneNumber: string | null;
   address: string | null;
+  active: boolean;
 }
 
 export interface UserSubscriptionPlan {
@@ -26,6 +27,7 @@ export interface Users {
   email: string;
   password: string;
   role: string;
+  active: boolean;
   companyId: number | null;
   company?: UserCompany | null;
   subscription?: UserSubscription | null;

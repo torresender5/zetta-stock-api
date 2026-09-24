@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  ForbiddenException,
   Inject,
 } from '@nestjs/common';
 import { UsersService } from 'src/users/users.service';
@@ -43,6 +44,16 @@ export class AuthService {
     const isValid = await this.verifyPassword(pass, user?.password);
     if (!isValid) {
       throw new UnauthorizedException();
+    }
+    if (user.active === false) {
+      throw new ForbiddenException(
+        'El usuario está desactivado. Contacta con el administrador.',
+      );
+    }
+    if (user.company?.active === false) {
+      throw new ForbiddenException(
+        'La empresa está desactivada. Contacta con el administrador.',
+      );
     }
     const payload = buildAuthPayload(user);
     this.logger.debug(payload);

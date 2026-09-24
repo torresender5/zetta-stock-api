@@ -14,6 +14,7 @@ import { CashRegisterModule } from './cash-register/cash-register.module';
 import { ApartadoModule } from './apartado/apartado.module';
 import { ReportModule } from './report/report.module';
 import { SubscriptionModule } from './subscription/subscription.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { SubscriptionModule } from './subscription/subscription.module';
     ApartadoModule,
     ReportModule,
     SubscriptionModule,
+    AdminModule,
   ],
   controllers: [],
   providers: [PrismaService],
