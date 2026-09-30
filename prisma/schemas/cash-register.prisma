@@ -12,6 +12,11 @@ model CashRegister {
   expectedTotal Float?
   countedTotal  Float?
   difference    Float?
+  fxRate        Float? // tasa USD -> Bs (promedio DolarApi) al abrir la caja
+  baseAmountVes Float?
+  expectedTotalVes Float?
+  countedTotalVes  Float?
+  differenceVes    Float?
   movements     CashMovement[]
 
   @@index([companyId, userId])
@@ -31,6 +36,8 @@ model CashMovement {
   type           String // opening | sale | expense | withdrawal | deposit | refund | apartado | closing
   paymentMethod  String       @default("cash") // cash | card | transfer | credit
   amount         Float        // con signo: positivo ingreso, negativo egreso
+  amountVes      Float?       // equivalente en Bs al momento del movimiento
+  fxRate         Float?       // tasa USD -> Bs vigente para el movimiento
   description    String?
   createdAt      DateTime     @default(now())
 

@@ -83,6 +83,14 @@ export class CreateApartadoDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional({
+    description: 'Tasa USD -> Bs (promedio DolarApi) al crear el apartado',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  fxRate?: number;
 }
 
 @ApiSchema({ name: 'AddApartadoPayment' })
@@ -101,11 +109,18 @@ export class AddApartadoPaymentDto {
   @IsOptional()
   @IsString()
   paymentMethod?: string = 'cash';
+
+  @ApiPropertyOptional({
+    description: 'Tasa USD -> Bs (promedio DolarApi) del abono',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  fxRate?: number;
 }
 
 @ApiSchema({ name: 'CancelApartado' })
 export class CancelApartadoDto {
-  @ApiPropertyOptional({ description: 'Cancellation reason' })
   @IsOptional()
   @IsString()
   reason?: string;

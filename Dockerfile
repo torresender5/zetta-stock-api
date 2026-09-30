@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl \
 WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
-RUN npm ci && npx prisma generate
+RUN npm ci --ignore-scripts && npx prisma generate --schema prisma/schemas
 
 # Etapa build: compila TypeScript
 FROM node:22-slim AS build
@@ -25,4 +25,4 @@ COPY --from=build /app/dist ./dist
 COPY prisma ./prisma/
 EXPOSE 3000
 # Aplica migraciones pendientes (idempotente; no borra datos) antes de arrancar
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+CMD ["sh", "-c", "npx prisma migrate deploy --schema prisma/schemas && node dist/main"]

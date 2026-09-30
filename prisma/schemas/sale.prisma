@@ -16,6 +16,13 @@ model Sale {
   cancelledReason String?
   refundAmount    Float?
   refundMethod    String?
+  fxRate          Float? // tasa USD -> Bs (promedio DolarApi) al momento de la venta
+  subtotalVes     Float?
+  taxVes          Float?
+  totalVes        Float?
+  receivedAmountVes Float?
+  changeAmountVes   Float?
+  refundAmountVes   Float?
   createdAt       DateTime    @default(now())
   items           SaleItem[]
   invoice         Invoice?
@@ -36,6 +43,8 @@ model SaleItem {
   quantity    Int
   unitPrice   Float
   subtotal    Float
+  unitPriceVes Float?
+  subtotalVes  Float?
 }
 
 model Invoice {
@@ -56,6 +65,10 @@ model Invoice {
   total           Float
   status          String   @default("pending")
   cancelledReason String?
+  fxRate          Float? // tasa USD -> Bs al momento de la venta
+  subtotalVes     Float?
+  taxVes          Float?
+  totalVes        Float?
   createdAt       DateTime @default(now())
 
   @@unique([companyId, invoiceNumber])

@@ -15,6 +15,7 @@ import {
   CompleteApartadoDto,
   ListApartadosQueryDto,
 } from './apartado.dto';
+import { round2 } from 'src/common/round';
 
 @Injectable()
 export class ApartadoService {
@@ -215,6 +216,15 @@ export class ApartadoService {
     register?: any,
   ) {
     const initialPaymentMethod = data.initialPaymentMethod || 'cash';
+    const fxRate = Number(data.fxRate) > 0 ? Number(data.fxRate) : undefined;
+    const inVES = (usd: number): number | null =>
+      fxRate ? round2(usd * fxRate) : null;
+    const itemsWithVes = items.map((i: any) => ({
+      ...i,
+      unitPriceVes: inVES(i.unitPrice),
+      subtotalVes: inVES(i.subtotal),
+    }));
+
     return this.prisma.$transaction(async (tx) => {
       const apartado = await tx.apartado.create({
         data: {
@@ -227,9 +237,15 @@ export class ApartadoService {
           total,
           initialPayment,
           totalPaid: initialPayment,
+          fxRate: fxRate ?? null,
+          subtotalVes: inVES(subtotal),
+          taxVes: inVES(tax),
+          totalVes: inVES(total),
+          initialPaymentVes: inVES(initialPayment),
+          totalPaidVes: inVES(initialPayment),
           dueDate: data.dueDate ? new Date(data.dueDate) : null,
           notes: data.notes || null,
-          items: { create: items },
+          items: { create: itemsWithVes },
         },
         include: { items: true },
       });
@@ -247,6 +263,7 @@ export class ApartadoService {
             apartadoId: apartado.id,
             companyId,
             amount: initialPayment,
+            amountVes: inVES(initialPayment),
             paymentMethod: initialPaymentMethod,
             description: `Anticipo de apartado ${apartadoNumber}`,
             cashRegisterId: register.id,
@@ -260,6 +277,8 @@ export class ApartadoService {
             type: 'apartado',
             paymentMethod: initialPaymentMethod,
             amount: initialPayment,
+            amountVes: inVES(initialPayment),
+            fxRate: fxRate ?? null,
             description: `Anticipo de apartado ${apartadoNumber}`,
           },
         });
@@ -301,6 +320,14 @@ export class ApartadoService {
       const paymentMethod = data.paymentMethod || 'cash';
       const newTotalPaid =
         Math.round((apartado.totalPaid + amount) * 100) / 100;
+      const fxRate =
+        Number(data.fxRate) > 0
+          ? Number(data.fxRate)
+          : Number(apartado.fxRate) > 0
+            ? Number(apartado.fxRate)
+            : undefined;
+      const inVES = (usd: number): number | null =>
+        fxRate ? round2(usd * fxRate) : null;
 
       return this.prisma.$transaction(async (tx) => {
         await tx.apartadoPayment.create({
@@ -308,6 +335,7 @@ export class ApartadoService {
             apartadoId: id,
             companyId,
             amount,
+            amountVes: inVES(amount),
             paymentMethod,
             description: `Abono a apartado ${apartado.apartadoNumber}`,
             cashRegisterId: register.id,
@@ -331,12 +359,20 @@ export class ApartadoService {
               type: 'sale',
               paymentMethod,
               amount,
+              amountVes: inVES(amount),
+              fxRate: fxRate ?? null,
               description: `Venta por apartado ${apartado.apartadoNumber} (${saleNumber})`,
             },
           });
           await tx.apartado.update({
             where: { id },
-            data: { status: 'paid', totalPaid: newTotalPaid, saleId: sale.id },
+            data: {
+              status: 'paid',
+              totalPaid: newTotalPaid,
+              totalPaidVes:
+                fxRate != null ? round2(newTotalPaid * fxRate) : null,
+              saleId: sale.id,
+            },
           });
           return { apartadoId: id, status: 'paid', sale };
         }
@@ -349,12 +385,17 @@ export class ApartadoService {
             type: 'apartado',
             paymentMethod,
             amount,
+            amountVes: inVES(amount),
+            fxRate: fxRate ?? null,
             description: `Abono a apartado ${apartado.apartadoNumber}`,
           },
         });
         await tx.apartado.update({
           where: { id },
-          data: { totalPaid: newTotalPaid },
+          data: {
+            totalPaid: newTotalPaid,
+            totalPaidVes: fxRate != null ? round2(newTotalPaid * fxRate) : null,
+          },
         });
         return {
           apartadoId: id,
@@ -381,6 +422,10 @@ export class ApartadoService {
       const outstanding =
         Math.round((apartado.total - apartado.totalPaid) * 100) / 100;
       const paymentMethod = data.paymentMethod || 'cash';
+      const apartadoFxRate =
+        Number(apartado.fxRate) > 0 ? Number(apartado.fxRate) : undefined;
+      const inVES = (usd: number): number | null =>
+        apartadoFxRate ? round2(usd * apartadoFxRate) : null;
 
       let register: any = null;
       if (outstanding > 0) {
@@ -399,6 +444,7 @@ export class ApartadoService {
               apartadoId: id,
               companyId,
               amount: outstanding,
+              amountVes: inVES(outstanding),
               paymentMethod,
               description: `Saldo de apartado ${apartado.apartadoNumber}`,
               cashRegisterId: register.id,
@@ -424,6 +470,8 @@ export class ApartadoService {
               type: 'sale',
               paymentMethod,
               amount: outstanding,
+              amountVes: inVES(outstanding),
+              fxRate: apartadoFxRate ?? null,
               description: `Venta por apartado ${apartado.apartadoNumber} (${saleNumber})`,
             },
           });
@@ -473,6 +521,8 @@ export class ApartadoService {
 
         if (refund > 0 && register) {
           const refundMethod = this.mapRefundMethod(data.refundMethod);
+          const apartadoFxRate =
+            Number(apartado.fxRate) > 0 ? Number(apartado.fxRate) : undefined;
           await tx.cashMovement.create({
             data: {
               cashRegisterId: register.id,
@@ -481,6 +531,11 @@ export class ApartadoService {
               type: 'refund',
               paymentMethod: refundMethod,
               amount: -refund,
+              amountVes:
+                apartadoFxRate != null
+                  ? round2(-refund * apartadoFxRate)
+                  : null,
+              fxRate: apartadoFxRate ?? null,
               description: `Reembolso de apartado cancelado ${apartado.apartadoNumber}`,
             },
           });
@@ -534,6 +589,10 @@ export class ApartadoService {
     const saleNumber = `VEN-${year}-${String(saleSeq).padStart(4, '0')}`;
     const invoiceSeq = Math.floor(Math.random() * 9000) + 1000;
     const invoiceNumber = `FAC-${year}-${invoiceSeq}`;
+    const fxRate =
+      Number(apartado.fxRate) > 0 ? Number(apartado.fxRate) : undefined;
+    const inVES = (usd: number): number | null =>
+      fxRate ? round2(usd * fxRate) : null;
 
     const sale = await tx.sale.create({
       data: {
@@ -547,6 +606,11 @@ export class ApartadoService {
         paymentStatus: 'paid',
         paymentMethod,
         receivedAmount,
+        fxRate: fxRate ?? null,
+        subtotalVes: inVES(apartado.subtotal),
+        taxVes: inVES(apartado.tax),
+        totalVes: inVES(apartado.total),
+        receivedAmountVes: inVES(receivedAmount),
         items: {
           create: apartado.items.map((item: any) => ({
             productId: item.productId,
@@ -555,6 +619,8 @@ export class ApartadoService {
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             subtotal: item.subtotal,
+            unitPriceVes: inVES(item.unitPrice),
+            subtotalVes: inVES(item.subtotal),
           })),
         },
       },
@@ -573,6 +639,10 @@ export class ApartadoService {
         subtotal: apartado.subtotal,
         tax: apartado.tax,
         total: apartado.total,
+        fxRate: fxRate ?? null,
+        subtotalVes: inVES(apartado.subtotal),
+        taxVes: inVES(apartado.tax),
+        totalVes: inVES(apartado.total),
         status: 'paid',
       },
     });

@@ -8,6 +8,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { PurchaseQueryDto } from './dto/purchase.dto';
+import { round2 } from 'src/common/round';
 
 @Injectable()
 export class PurchaseService {
@@ -185,6 +186,10 @@ export class PurchaseService {
     total: number,
     purchaseNumber: string,
   ) {
+    const fxRate = Number(data.fxRate) > 0 ? Number(data.fxRate) : undefined;
+    const inVES = (usd: number): number | null =>
+      fxRate ? round2(usd * fxRate) : null;
+
     // Create purchase with items in a transaction
     const result = await this.prisma.$transaction(async (tx) => {
       // Create the purchase
@@ -198,6 +203,10 @@ export class PurchaseService {
           tax,
           total,
           paymentStatus: data.paymentStatus,
+          fxRate: fxRate ?? null,
+          subtotalVes: inVES(subtotal),
+          taxVes: inVES(tax),
+          totalVes: inVES(total),
           items: {
             create: data.items.map((item: any) => ({
               productId: Number(item.productId),
@@ -206,6 +215,8 @@ export class PurchaseService {
               quantity: Number(item.quantity),
               unitPrice: Number(item.unitPrice),
               subtotal: Number(item.subtotal),
+              unitPriceVes: inVES(Number(item.unitPrice)),
+              subtotalVes: inVES(Number(item.subtotal)),
             })),
           },
         },

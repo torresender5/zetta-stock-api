@@ -23,6 +23,14 @@ export class OpenCashRegisterDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiPropertyOptional({
+    description: 'Tasa USD -> Bs (promedio DolarApi) al abrir la caja',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  fxRate?: number;
 }
 
 @ApiSchema({ name: 'CreateCashMovement' })
@@ -52,6 +60,14 @@ export class CreateCashMovementDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiPropertyOptional({
+    description: 'Tasa USD -> Bs (promedio DolarApi) del movimiento',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  fxRate?: number;
 }
 
 @ApiSchema({ name: 'CloseCashRegister' })

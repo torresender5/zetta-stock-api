@@ -10,6 +10,10 @@ model Purchase {
   tax            Float
   total          Float
   paymentStatus  String         @default("pending")
+  fxRate         Float? // tasa USD -> Bs (promedio DolarApi) al momento de la compra
+  subtotalVes    Float?
+  taxVes         Float?
+  totalVes       Float?
   createdAt      DateTime       @default(now())
   items          PurchaseItem[]
 
@@ -27,4 +31,6 @@ model PurchaseItem {
   quantity    Int
   unitPrice   Float
   subtotal    Float
+  unitPriceVes Float?
+  subtotalVes  Float?
 }

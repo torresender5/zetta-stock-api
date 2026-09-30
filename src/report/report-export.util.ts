@@ -257,12 +257,10 @@ export function exportToPdf(table: ExportTable): Promise<Buffer> {
     .fillColor(TEXT_MUTED)
     .font('Helvetica')
     .fontSize(8)
-    .text(
-      `Generado: ${formatDateTime(new Date())}`,
-      startX,
-      top + 14,
-      { width: pageWidth, align: 'right' },
-    );
+    .text(`Generado: ${formatDateTime(new Date())}`, startX, top + 14, {
+      width: pageWidth,
+      align: 'right',
+    });
 
   if (hasCompany) {
     doc
@@ -344,7 +342,9 @@ export function exportToPdf(table: ExportTable): Promise<Buffer> {
         .sort((a, b) => b.value - a.value),
       maxVal: Math.max(
         0,
-        ...chart.items.filter((item) => item.value > 0).map((item) => item.value),
+        ...chart.items
+          .filter((item) => item.value > 0)
+          .map((item) => item.value),
       ),
     }));
     const maxPanelH = Math.max(

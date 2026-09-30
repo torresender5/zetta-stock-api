@@ -3,6 +3,11 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { ListSalesQueryDto } from './dto/sale.dto';
+import { round2 } from 'src/common/round';
+
+const WALK_IN_CLIENT_NAME = 'Consumidor final';
+const WALK_IN_CLIENT_EMAIL = 'consumidor-final@zettastock.local';
+const WALK_IN_CLIENT_DOCUMENT = 'CF-0000000';
 
 @Injectable()
 export class SaleService {
@@ -106,17 +111,9 @@ export class SaleService {
         );
       }
 
-      // Get client info for invoice (must belong to same company)
-      const client = await this.prisma.client.findFirst({
-        where: {
-          id: Number(data.clientId),
-          ...(companyId ? { companyId } : {}),
-        },
-      });
-
-      if (!client) {
-        throw new Error('Client not found');
-      }
+      // Get client info for invoice (must belong to same company).
+      // Si no se envía clientId se usa el cliente genérico "Consumidor final"
+      const client = await this.resolveClient(companyId, data.clientId);
 
       // Verify all products belong to the same company
       for (const item of data.items) {
@@ -178,6 +175,64 @@ export class SaleService {
     }
   }
 
+  private async resolveClient(companyId?: number, clientId?: unknown) {
+    const id = Number(clientId);
+    if (
+      clientId !== undefined &&
+      clientId !== null &&
+      clientId !== '' &&
+      id > 0
+    ) {
+      const client = await this.prisma.client.findFirst({
+        where: {
+          id,
+          ...(companyId ? { companyId } : {}),
+        },
+      });
+
+      if (!client) {
+        throw new Error('Client not found');
+      }
+
+      return client;
+    }
+
+    return this.getOrCreateWalkInClient(companyId);
+  }
+
+  private async getOrCreateWalkInClient(companyId?: number) {
+    const where = {
+      name: WALK_IN_CLIENT_NAME,
+      ...(companyId ? { companyId } : {}),
+    };
+    const existing = await this.prisma.client.findFirst({ where });
+    if (existing) {
+      return existing;
+    }
+
+    try {
+      return await this.prisma.client.create({
+        data: {
+          companyId,
+          name: WALK_IN_CLIENT_NAME,
+          email: WALK_IN_CLIENT_EMAIL,
+          phone: '',
+          address: '',
+          document: WALK_IN_CLIENT_DOCUMENT,
+        },
+      });
+    } catch (error: any) {
+      // Colisión por concurrencia (unique companyId+email / companyId+document)
+      if (error?.code === 'P2002') {
+        const client = await this.prisma.client.findFirst({ where });
+        if (client) {
+          return client;
+        }
+      }
+      throw error;
+    }
+  }
+
   private async findActiveRegister(companyId?: number, userId?: number) {
     if (!companyId) {
       return null;
@@ -223,6 +278,10 @@ export class SaleService {
         ? Number(data.receivedAmount) - total
         : null;
 
+    const fxRate = Number(data.fxRate) > 0 ? Number(data.fxRate) : undefined;
+    const inVES = (usd: number | null | undefined): number | null =>
+      usd != null && fxRate ? round2(Number(usd) * fxRate) : null;
+
     // Create sale with items and invoice in a transaction
     const result = await this.prisma.$transaction(async (tx) => {
       // Create the sale
@@ -230,7 +289,7 @@ export class SaleService {
         data: {
           companyId,
           saleNumber,
-          clientId: Number(data.clientId),
+          clientId: client.id,
           date: new Date(data.date),
           subtotal,
           tax,
@@ -240,6 +299,15 @@ export class SaleService {
           receivedAmount:
             data.receivedAmount != null ? Number(data.receivedAmount) : null,
           changeAmount,
+          fxRate: fxRate ?? null,
+          subtotalVes: inVES(subtotal),
+          taxVes: inVES(tax),
+          totalVes: inVES(total),
+          receivedAmountVes:
+            data.receivedAmount != null
+              ? inVES(Number(data.receivedAmount))
+              : null,
+          changeAmountVes: changeAmount != null ? inVES(changeAmount) : null,
           items: {
             create: data.items.map((item: any) => ({
               productId: Number(item.productId),
@@ -248,6 +316,8 @@ export class SaleService {
               quantity: Number(item.quantity),
               unitPrice: Number(item.unitPrice),
               subtotal: Number(item.subtotal),
+              unitPriceVes: inVES(Number(item.unitPrice)),
+              subtotalVes: inVES(Number(item.subtotal)),
             })),
           },
         },
@@ -266,7 +336,7 @@ export class SaleService {
           invoiceNumber,
           saleId: sale.id,
           companyId,
-          clientId: Number(data.clientId),
+          clientId: client.id,
           clientName: client.name,
           clientDocument: client.document,
           clientAddress: client.address,
@@ -274,6 +344,10 @@ export class SaleService {
           subtotal,
           tax,
           total,
+          fxRate: fxRate ?? null,
+          subtotalVes: inVES(subtotal),
+          taxVes: inVES(tax),
+          totalVes: inVES(total),
           status: data.paymentStatus,
         },
       });
@@ -346,6 +420,8 @@ export class SaleService {
             type: 'sale',
             paymentMethod: data.paymentMethod || 'cash',
             amount: total,
+            amountVes: inVES(total),
+            fxRate: fxRate ?? null,
             description: `Venta ${saleNumber}`,
           },
         });
@@ -418,6 +494,12 @@ export class SaleService {
               paymentStatus === 'cancelled' ? cancelledReason || null : null,
             refundAmount:
               paymentStatus === 'cancelled' ? (refundAmount ?? null) : null,
+            refundAmountVes:
+              paymentStatus === 'cancelled' &&
+              refundAmount != null &&
+              existing.fxRate
+                ? round2(refundAmount * existing.fxRate)
+                : null,
             refundMethod:
               paymentStatus === 'cancelled' ? refundMethod || null : null,
             ...(paymentStatus === 'paid' && newPaymentMethod
@@ -453,6 +535,11 @@ export class SaleService {
                 paymentMethod:
                   newPaymentMethod || existing.paymentMethod || 'cash',
                 amount: existing.total,
+                amountVes:
+                  existing.fxRate != null
+                    ? round2(existing.total * existing.fxRate)
+                    : null,
+                fxRate: existing.fxRate ?? null,
                 description: `Cobro de venta ${existing.saleNumber ?? id}`,
               },
             });
@@ -465,6 +552,11 @@ export class SaleService {
                 type: 'sale',
                 paymentMethod: existing.paymentMethod || 'cash',
                 amount: -existing.total,
+                amountVes:
+                  existing.fxRate != null
+                    ? round2(-existing.total * existing.fxRate)
+                    : null,
+                fxRate: existing.fxRate ?? null,
                 description: `Reversión a por cobrar de venta ${existing.saleNumber ?? id}`,
               },
             });
@@ -478,6 +570,11 @@ export class SaleService {
                 type: 'refund',
                 paymentMethod: this.mapRefundMethod(refundMethod),
                 amount: -Number(refund),
+                amountVes:
+                  existing.fxRate != null
+                    ? round2(-Number(refund) * existing.fxRate)
+                    : null,
+                fxRate: existing.fxRate ?? null,
                 description: `Reembolso de venta cancelada ${existing.saleNumber ?? id}`,
               },
             });
@@ -559,6 +656,9 @@ export class SaleService {
                 type: 'sale',
                 paymentMethod: sale.paymentMethod || 'cash',
                 amount: sale.total,
+                amountVes:
+                  sale.fxRate != null ? round2(sale.total * sale.fxRate) : null,
+                fxRate: sale.fxRate ?? null,
                 description: `Cobro de factura ${invoice.invoiceNumber}`,
               },
             });

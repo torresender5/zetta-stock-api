@@ -7,6 +7,7 @@ import {
   CreateCashMovementDto,
   OpenCashRegisterDto,
 } from './dto/cash-register.dto';
+import { round2 } from 'src/common/round';
 
 @Injectable()
 export class CashRegisterService {
@@ -116,12 +117,16 @@ export class CashRegisterService {
         })}`;
 
       const register = await this.prisma.$transaction(async (tx) => {
+        const fxRate = Number(data.fxRate) > 0 ? Number(data.fxRate) : null;
         const created = await tx.cashRegister.create({
           data: {
             companyId,
             userId,
             name,
             baseAmount: Number(data.baseAmount),
+            fxRate,
+            baseAmountVes:
+              fxRate != null ? round2(Number(data.baseAmount) * fxRate) : null,
             status: 'open',
           },
         });
@@ -132,6 +137,9 @@ export class CashRegisterService {
             type: 'opening',
             paymentMethod: 'cash',
             amount: Number(data.baseAmount),
+            amountVes:
+              fxRate != null ? round2(Number(data.baseAmount) * fxRate) : null,
+            fxRate,
             description: 'Apertura de caja',
           },
         });
@@ -164,6 +172,7 @@ export class CashRegisterService {
 
       const signed =
         data.type === 'deposit' ? Number(data.amount) : -Number(data.amount);
+      const fxRate = Number(data.fxRate) > 0 ? Number(data.fxRate) : null;
 
       return this.prisma.cashMovement.create({
         data: {
@@ -172,6 +181,8 @@ export class CashRegisterService {
           type: data.type,
           paymentMethod: data.paymentMethod,
           amount: signed,
+          amountVes: fxRate != null ? round2(signed * fxRate) : null,
+          fxRate,
           description: data.description || null,
         },
       });
@@ -209,6 +220,10 @@ export class CashRegisterService {
         0,
       );
       const difference = countedTotal - expectedTotal;
+      const fxRate2 =
+        Number(register.fxRate) > 0 ? Number(register.fxRate) : null;
+      const inVES = (usd: number): number | null =>
+        fxRate2 != null ? round2(usd * fxRate2) : null;
 
       const closed = await this.prisma.$transaction(async (tx) => {
         const updated = await tx.cashRegister.update({
@@ -219,6 +234,9 @@ export class CashRegisterService {
             expectedTotal,
             countedTotal,
             difference,
+            expectedTotalVes: inVES(expectedTotal),
+            countedTotalVes: inVES(countedTotal),
+            differenceVes: inVES(difference),
           },
         });
         await tx.cashMovement.create({
@@ -294,6 +312,11 @@ export class CashRegisterService {
         salesByMethod,
         expectedByMethod,
         movementCount: register.movements.length,
+        fxRate: register.fxRate ?? null,
+        baseAmountVes: register.baseAmountVes ?? null,
+        expectedTotalVes: register.expectedTotalVes ?? null,
+        countedTotalVes: register.countedTotalVes ?? null,
+        differenceVes: register.differenceVes ?? null,
       };
     } catch (error) {
       this.logger.error(

@@ -47,10 +47,15 @@ export class CreateSaleItemDto {
 
 @ApiSchema({ name: 'CreateSale' })
 export class CreateSaleDto {
-  @ApiProperty({ description: 'Client ID' })
+  @ApiPropertyOptional({
+    description:
+      'Client ID. Si se omite, la venta se registra con el cliente genérico',
+    required: false,
+  })
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  clientId: number;
+  clientId?: number;
 
   @ApiProperty({ description: 'Sale Date' })
   @IsString()
@@ -81,6 +86,14 @@ export class CreateSaleDto {
   @Type(() => Number)
   @IsNumber()
   receivedAmount?: number;
+
+  @ApiPropertyOptional({
+    description: 'Tasa USD -> Bs (promedio DolarApi) al momento de la venta',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  fxRate?: number;
 }
 
 @ApiSchema({ name: 'ListSales' })

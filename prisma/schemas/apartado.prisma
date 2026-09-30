@@ -14,6 +14,12 @@ model Apartado {
   status         String            @default("active") // active | paid | cancelled
   dueDate        DateTime?
   notes          String?
+  fxRate         Float? // tasa USD -> Bs en la creación del apartado
+  subtotalVes    Float?
+  taxVes         Float?
+  totalVes       Float?
+  initialPaymentVes Float?
+  totalPaidVes   Float?
   saleId         Int?              @unique
   sale           Sale?             @relation(fields: [saleId], references: [id])
   createdAt      DateTime          @default(now())
@@ -36,6 +42,8 @@ model ApartadoItem {
   quantity    Int
   unitPrice   Float
   subtotal    Float
+  unitPriceVes Float?
+  subtotalVes  Float?
 }
 
 model ApartadoPayment {
@@ -45,6 +53,7 @@ model ApartadoPayment {
   companyId      Int?
   company        Company?   @relation(fields: [companyId], references: [id])
   amount         Float
+  amountVes      Float?
   paymentMethod  String     @default("cash") // cash | card | transfer | credit
   date           DateTime   @default(now())
   description    String?

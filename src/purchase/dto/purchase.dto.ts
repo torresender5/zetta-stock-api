@@ -64,6 +64,14 @@ export class CreatePurchaseDto {
   @ApiProperty({ description: 'Payment Status', enum: ['paid', 'pending'] })
   @IsString()
   paymentStatus: string;
+
+  @ApiPropertyOptional({
+    description: 'Tasa USD -> Bs (promedio DolarApi) al momento de la compra',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  fxRate?: number;
 }
 
 @ApiSchema({ name: 'UpdatePurchasePaymentStatus' })
