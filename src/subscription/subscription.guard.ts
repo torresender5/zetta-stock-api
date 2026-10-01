@@ -6,10 +6,39 @@ import {
 } from '@nestjs/common';
 import { AuthUserPayload } from 'src/auth/auth-user.interface';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { PLAN_EXPIRED_CODE } from './subscription.constant';
+import {
+  FREE_PLAN_KEY,
+  PLAN_DEFAULT_VIEWS,
+  PLAN_EXPIRED_CODE,
+  PLAN_VIEW_DENIED_CODE,
+} from './subscription.constant';
 
 /**
- * Bloquea a las empresas cuya suscripción (o prueba gratuita) ya venció.
+ * Prefijo de ruta → vista (ViewKey) que el plan debe incluir.
+ * Orden importa: los prefijos más específicos van primero.
+ * Debe mantenerse al día con las rutas de los controllers.
+ */
+const PATH_VIEWS: ReadonlyArray<readonly [prefix: string, view: string]> = [
+  ['/reports/accounts-receivable', 'accountsReceivable'],
+  ['/reports/accounts-payable', 'accountsPayable'],
+  ['/reports/apartados', 'apartados'],
+  ['/reports', 'reports'],
+  ['/products', 'products'],
+  ['/categories', 'products'],
+  ['/client', 'clients'],
+  ['/suppliers', 'suppliers'],
+  ['/purchases', 'purchases'],
+  ['/sales', 'sales'],
+  ['/invoices', 'invoices'],
+  ['/apartados', 'apartados'],
+  ['/cash-registers', 'caja'],
+  ['/users', 'users'],
+];
+
+/**
+ * Bloquea a las empresas cuya suscripción (o prueba gratuita) ya venció y
+ * valida que la vista (módulo) requerida por la ruta esté incluida en el plan
+ * (`Plan.allowedViews`, con los mismos defaults que el frontend).
  * Registrado como APP_GUARD: se ejecuta sobre todas las rutas, salvo las que
  * deben quedar accesibles para que el usuario renueve (auth, /plans,
  * /subscription, perfil) y el superadmin (UserAdmin sin companyId).
@@ -24,9 +53,29 @@ export class SubscriptionGuard implements CanActivate {
       normalized.startsWith('/auth') ||
       normalized.startsWith('/plans') ||
       normalized.startsWith('/subscription') ||
-      normalized.startsWith('/users/me') ||
-      normalized.startsWith('/mail')
+      normalized.startsWith('/users/me')
     );
+  }
+
+  private requiredViewFor(path: string): string | null {
+    const normalized = path.toLowerCase();
+    for (const [prefix, view] of PATH_VIEWS) {
+      if (normalized.startsWith(prefix)) {
+        return view;
+      }
+    }
+    return null;
+  }
+
+  private allowedViewsFor(
+    plan: { key: string; allowedViews?: unknown } | null | undefined,
+  ): string[] {
+    const views = plan?.allowedViews;
+    if (Array.isArray(views) && views.length > 0) {
+      return views as string[];
+    }
+    const planKey = plan?.key ?? FREE_PLAN_KEY;
+    return PLAN_DEFAULT_VIEWS[planKey] ?? PLAN_DEFAULT_VIEWS[FREE_PLAN_KEY];
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -49,22 +98,35 @@ export class SubscriptionGuard implements CanActivate {
 
     const subscription = await this.prisma.subscription.findUnique({
       where: { companyId: request.user.companyId },
+      include: { plan: true },
     });
-    // Empresas heredadas sin suscripción no se bloquean.
-    if (!subscription) {
-      return true;
-    }
-    const effectiveEnd = subscription.trialEndsAt ?? subscription.expiresAt;
-    const expired =
-      subscription.status === 'expired' ||
-      (effectiveEnd !== null && effectiveEnd.getTime() <= Date.now());
+    // Empresas heredadas sin suscripción no se bloquean por vencimiento,
+    // pero sí se les aplican las vistas del plan gratuito por defecto.
+    if (subscription) {
+      const effectiveEnd = subscription.trialEndsAt ?? subscription.expiresAt;
+      const expired =
+        subscription.status === 'expired' ||
+        (effectiveEnd !== null && effectiveEnd.getTime() <= Date.now());
 
-    if (expired) {
-      throw new ForbiddenException({
-        message:
-          'Tu plan ha vencido. Activa tu suscripción para continuar usando ZettaStock.',
-        code: PLAN_EXPIRED_CODE,
-      });
+      if (expired) {
+        throw new ForbiddenException({
+          message:
+            'Tu plan ha vencido. Activa tu suscripción para continuar usando ZettaStock.',
+          code: PLAN_EXPIRED_CODE,
+        });
+      }
+    }
+
+    const requiredView = this.requiredViewFor(request.path);
+    if (requiredView) {
+      const allowedViews = this.allowedViewsFor(subscription?.plan);
+      if (!allowedViews.includes(requiredView)) {
+        throw new ForbiddenException({
+          message:
+            'Tu plan actual no incluye este módulo. Actualiza tu plan para acceder.',
+          code: PLAN_VIEW_DENIED_CODE,
+        });
+      }
     }
     return true;
   }

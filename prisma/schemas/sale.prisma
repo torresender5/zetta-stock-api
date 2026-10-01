@@ -14,6 +14,7 @@ model Sale {
   receivedAmount  Float?
   changeAmount    Float?
   cancelledReason String?
+  notes           String?
   refundAmount    Float?
   refundMethod    String?
   fxRate          Float? // tasa USD -> Bs (promedio DolarApi) al momento de la venta

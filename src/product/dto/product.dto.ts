@@ -1,4 +1,4 @@
-import { ApiProperty, ApiSchema } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, ApiSchema } from '@nestjs/swagger';
 import {
   IsString,
   IsOptional,
@@ -59,9 +59,21 @@ export class ProductCreateDto {
   @IsString()
   type: string;
 
-  @ApiProperty({ description: 'Product Category' })
+  @ApiPropertyOptional({
+    description:
+      'Product Category (nombre). Si se envía categoryId, el nombre se toma de la categoría',
+  })
+  @IsOptional()
   @IsString()
-  category: string;
+  category?: string;
+
+  @ApiPropertyOptional({
+    description: 'Category ID (FK a Category). Tiene prioridad sobre category',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  categoryId?: number;
 
   @ApiProperty({ description: 'Product Image URL' })
   @IsOptional()

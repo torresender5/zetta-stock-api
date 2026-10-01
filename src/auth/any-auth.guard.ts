@@ -5,23 +5,35 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../prisma/prisma.service';
 import { jwtConstants } from './auth.constant';
+import { IS_PUBLIC_KEY } from './public.decorator';
 import bcrypt from 'bcryptjs';
 
 /**
  * Acepta autenticacion JWT (Authorization: Bearer <token>)
  * o Basic Auth contra la tabla UserAdmin (Authorization: Basic base64(email:password)).
  * Funciona con uno u otro metodo, nunca exige ambos.
+ * Registrado globalmente (APP_GUARD): los endpoints marcados con @Public()
+ * se saltan la autenticación.
  */
 @Injectable()
 export class AnyAuthGuard implements CanActivate {
   constructor(
     private jwtService: JwtService,
     private prisma: PrismaService,
+    private reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
+    }
     const request = context.switchToHttp().getRequest();
     const [type, token] = request.headers.authorization?.split(' ') ?? [];
     if (type === 'Bearer' && token) {

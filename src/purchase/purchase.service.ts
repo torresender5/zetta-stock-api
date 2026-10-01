@@ -7,7 +7,7 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
-import { PurchaseQueryDto } from './dto/purchase.dto';
+import { PurchaseQueryDto, UpdatePurchaseDto } from './dto/purchase.dto';
 import { round2 } from 'src/common/round';
 
 @Injectable()
@@ -286,27 +286,48 @@ export class PurchaseService {
       }
 
       return purchase;
-    });
+    }, { timeout: 15000 });
 
     return result;
   }
 
-  async updatePaymentStatus(
-    id: number,
-    paymentStatus: string,
-    companyId?: number,
-  ) {
+  async update(id: number, data: UpdatePurchaseDto, companyId?: number) {
     try {
-      this.logger.info(`Updating purchase payment status: ${id}`);
+      this.logger.info(`Updating purchase metadata: ${id}`);
       const existing = await this.prisma.purchase.findFirst({
         where: { id, ...(companyId ? { companyId } : {}) },
       });
       if (!existing) {
         throw new NotFoundException('Compra no encontrada');
       }
+
+      const updateData: {
+        supplierId?: number;
+        date?: Date;
+        paymentStatus?: string;
+      } = {};
+      if (data.supplierId !== undefined) {
+        const supplier = await this.prisma.supplier.findFirst({
+          where: {
+            id: data.supplierId,
+            ...(companyId ? { companyId } : {}),
+          },
+        });
+        if (!supplier) {
+          throw new NotFoundException('Proveedor no encontrado');
+        }
+        updateData.supplierId = data.supplierId;
+      }
+      if (data.date !== undefined) {
+        updateData.date = new Date(data.date);
+      }
+      if (data.paymentStatus !== undefined) {
+        updateData.paymentStatus = data.paymentStatus;
+      }
+
       return await this.prisma.purchase.update({
         where: { id },
-        data: { paymentStatus },
+        data: updateData,
         include: {
           items: true,
           supplier: true,
@@ -314,6 +335,92 @@ export class PurchaseService {
       });
     } catch (error) {
       this.logger.error(`Error updating purchase ${id}:`, error);
+      throw error;
+    }
+  }
+
+  async remove(id: number, companyId?: number) {
+    try {
+      this.logger.info(`Deleting purchase: ${id}`);
+      const existing = await this.prisma.purchase.findFirst({
+        where: { id, ...(companyId ? { companyId } : {}) },
+        include: { items: true },
+      });
+      if (!existing) {
+        throw new NotFoundException('Compra no encontrada');
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        // Revertir el stock que incrementó la creación de la compra
+        for (const item of existing.items) {
+          const product = await tx.product.findFirst({
+            where: {
+              id: item.productId,
+              ...(companyId ? { companyId } : {}),
+            },
+          });
+          if (!product) {
+            throw new NotFoundException(
+              `Producto ${item.productId} no encontrado`,
+            );
+          }
+
+          const sizeStock = (product.sizes as any[]) ?? [];
+          let updateStock: number;
+          let updateSizes: any;
+
+          if (Array.isArray(sizeStock) && sizeStock.length > 0 && item.size) {
+            const sizeIndex = sizeStock.findIndex((s) => s.size === item.size);
+            if (sizeIndex === -1) {
+              throw new BadRequestException(
+                `Talla "${item.size}" no válida para "${product.name}"`,
+              );
+            }
+            updateSizes = sizeStock.map((s, i) =>
+              i === sizeIndex
+                ? {
+                    ...s,
+                    stock: Math.max(
+                      0,
+                      (Number(s.stock) ?? 0) - Number(item.quantity),
+                    ),
+                  }
+                : s,
+            );
+            updateStock = updateSizes.reduce(
+              (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
+              0,
+            );
+          } else {
+            if (Array.isArray(sizeStock) && sizeStock.length > 0) {
+              this.logger.warn(
+                `Línea de compra ${item.id} sin talla en producto con tallas "${product.name}", ` +
+                  'se ajusta solo el stock total',
+              );
+            }
+            updateStock = Math.max(
+              0,
+              Number(product.stock) - Number(item.quantity),
+            );
+            updateSizes = undefined;
+          }
+
+          await tx.product.update({
+            where: { id: item.productId },
+            data: {
+              stock: updateStock,
+              ...(updateSizes !== undefined ? { sizes: updateSizes } : {}),
+            },
+          });
+        }
+
+        await tx.purchaseItem.deleteMany({ where: { purchaseId: id } });
+        await tx.purchase.delete({ where: { id } });
+      }, { timeout: 15000 });
+
+      return existing;
+    } catch (error) {
+      this.logger.error(`Error deleting purchase ${id}:`, error);
       throw error;
     }
   }

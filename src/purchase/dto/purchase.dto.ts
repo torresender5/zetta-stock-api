@@ -9,6 +9,7 @@ import {
   Min,
   Max,
   IsDateString,
+  IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -74,11 +75,27 @@ export class CreatePurchaseDto {
   fxRate?: number;
 }
 
-@ApiSchema({ name: 'UpdatePurchasePaymentStatus' })
-export class UpdatePurchasePaymentStatusDto {
-  @ApiProperty({ description: 'Payment Status', enum: ['paid', 'pending'] })
+@ApiSchema({ name: 'UpdatePurchase' })
+export class UpdatePurchaseDto {
+  @ApiPropertyOptional({ description: 'Supplier ID' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  supplierId?: number;
+
+  @ApiPropertyOptional({ description: 'Purchase Date' })
+  @IsOptional()
   @IsString()
-  paymentStatus: string;
+  date?: string;
+
+  @ApiPropertyOptional({
+    description: 'Payment Status',
+    enum: ['paid', 'pending'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['paid', 'pending'])
+  paymentStatus?: string;
 }
 
 @ApiSchema({ name: 'PurchaseQuery' })

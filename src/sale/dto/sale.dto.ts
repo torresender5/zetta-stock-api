@@ -184,6 +184,50 @@ export class UpdateSalePaymentStatusDto {
   paymentMethod?: string;
 }
 
+@ApiSchema({ name: 'UpdateSale' })
+export class UpdateSaleDto {
+  @ApiPropertyOptional({
+    description:
+      'Notas/observaciones de la venta (editable en cualquier estado)',
+  })
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @ApiPropertyOptional({
+    description: 'Client ID (solo ventas con estado pending)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  clientId?: number;
+
+  @ApiPropertyOptional({ description: 'Sale Date (solo ventas pending)' })
+  @IsOptional()
+  @IsString()
+  date?: string;
+
+  @ApiPropertyOptional({
+    description: 'Payment Method (solo ventas pending)',
+    enum: ['cash', 'card', 'transfer', 'credit'],
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['cash', 'card', 'transfer', 'credit'])
+  paymentMethod?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Sale Items — reemplaza todas las líneas y recalcula totales y stock (solo ventas pending)',
+    type: [CreateSaleItemDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateSaleItemDto)
+  items?: CreateSaleItemDto[];
+}
+
 @ApiSchema({ name: 'UpdateInvoiceStatus' })
 export class UpdateInvoiceStatusDto {
   @ApiProperty({ description: 'Invoice Status', enum: ['paid', 'pending'] })

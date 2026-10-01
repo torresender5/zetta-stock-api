@@ -1,3 +1,5 @@
+// Carga .env antes de importar el resto de módulos (JWT_SECRET, MAIL_*, ...).
+import 'dotenv/config';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';

@@ -2,7 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
-import { MailService } from '../email/mail.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 
 describe('AuthService', () => {
@@ -14,7 +13,6 @@ describe('AuthService', () => {
         AuthService,
         { provide: UsersService, useValue: {} },
         { provide: JwtService, useValue: {} },
-        { provide: MailService, useValue: {} },
         {
           provide: WINSTON_MODULE_PROVIDER,
           useValue: {

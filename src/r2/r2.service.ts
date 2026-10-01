@@ -11,9 +11,10 @@ import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class R2Service {
-  private readonly s3Client: S3Client;
-  private readonly bucket: string;
-  private readonly publicUrl: string;
+  private readonly s3Client: S3Client | null = null;
+  private readonly bucket: string | null = null;
+  private readonly publicUrl: string | null = null;
+  private readonly configured: boolean;
 
   constructor(
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
@@ -24,6 +25,14 @@ export class R2Service {
     const bucket = process.env.R2_BUCKET_NAME;
     const publicUrl = process.env.R2_PUBLIC_URL;
 
+    this.configured = !!(
+      accountId &&
+      accessKeyId &&
+      secretAccessKey &&
+      bucket &&
+      publicUrl
+    );
+
     if (
       !accountId ||
       !accessKeyId ||
@@ -31,9 +40,12 @@ export class R2Service {
       !bucket ||
       !publicUrl
     ) {
-      throw new Error(
-        'Cloudflare R2 configuration is missing. Check R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME and R2_PUBLIC_URL env variables.',
+      this.logger.warn(
+        'Cloudflare R2 no está configurado (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, ' +
+          'R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL). ' +
+          'La subida de imágenes de productos está deshabilitada.',
       );
+      return;
     }
 
     this.bucket = bucket;
@@ -50,13 +62,22 @@ export class R2Service {
     });
   }
 
+  private ensureConfigured(): void {
+    if (!this.configured || !this.s3Client || !this.bucket || !this.publicUrl) {
+      throw new Error(
+        'Cloudflare R2 no está configurado: la subida de imágenes no está disponible.',
+      );
+    }
+  }
+
   async uploadFile(folder: string, file: Express.Multer.File): Promise<string> {
+    this.ensureConfigured();
     const key = `${folder}/${uuidv4()}${extname(file.originalname)}`;
     this.logger.info(`Uploading file to R2: ${key}`);
     try {
-      await this.s3Client.send(
+      await this.s3Client!.send(
         new PutObjectCommand({
-          Bucket: this.bucket,
+          Bucket: this.bucket!,
           Key: key,
           Body: file.buffer,
           ContentType: file.mimetype,
@@ -71,6 +92,9 @@ export class R2Service {
   }
 
   async deleteFile(url: string): Promise<void> {
+    if (!this.configured || !this.publicUrl || !this.bucket) {
+      return;
+    }
     const publicPrefix = `${this.publicUrl}/`;
     if (!url || !url.startsWith(publicPrefix)) {
       return;
@@ -78,7 +102,7 @@ export class R2Service {
     const key = url.replace(publicPrefix, '');
     this.logger.info(`Deleting file from R2: ${key}`);
     try {
-      await this.s3Client.send(
+      await this.s3Client!.send(
         new DeleteObjectCommand({
           Bucket: this.bucket,
           Key: key,
@@ -91,6 +115,11 @@ export class R2Service {
   }
 
   getPublicUrl(key: string): string {
+    if (!this.publicUrl) {
+      throw new Error(
+        'Cloudflare R2 no está configurado: no hay URL pública disponible.',
+      );
+    }
     return `${this.publicUrl}/${key}`;
   }
 }

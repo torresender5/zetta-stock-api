@@ -14,7 +14,7 @@ export class SubscriptionCronService {
     private mailService: MailService,
   ) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  @Cron(CronExpression.EVERY_DAY_AT_9AM, { name: 'handleExpirations' })
   async handleExpirations() {
     const now = new Date();
 

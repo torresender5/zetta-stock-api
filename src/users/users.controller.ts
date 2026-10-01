@@ -4,7 +4,6 @@ import {
   Post,
   Patch,
   Delete,
-  UseGuards,
   Body,
   HttpCode,
   HttpStatus,
@@ -14,9 +13,8 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from './users.service';
-import { AuthGuard } from '../auth/auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
-import { Roles } from '../auth/roles.decorator';
+import { Auth } from '../auth/auth.decorator';
+import { AuthRoles } from '../auth/auth-roles.decorator';
 import { UserCreateDto, UpdateUserDto } from './dto/user.dto';
 import { UpdateProfileDto, UpdateCompanyDto } from './dto/profile.dto';
 import { AuthUserPayload } from '../auth/auth-user.interface';
@@ -32,24 +30,24 @@ export class UsersController {
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
   ) {}
 
-  @UseGuards(AuthGuard, RolesGuard)
-  @Roles('admin')
+  @AuthRoles('admin')
   @Get()
   findAll(@Req() req: Request & { user: AuthUserPayload }) {
     this.logger.info('Starting UsersController find all');
     return this.usersService.findAllUsers(req.user?.companyId);
   }
 
-  @UseGuards(AuthGuard, RolesGuard)
-  @Roles('admin')
+  @AuthRoles('admin')
   @Get('email/:email')
-  findByEmail(@Param('email') email: string) {
+  findByEmail(
+    @Param('email') email: string,
+    @Req() req: Request & { user: AuthUserPayload },
+  ) {
     this.logger.info('Starting UsersController find By Email');
-    return this.usersService.findByEmail(email);
+    return this.usersService.findSafeByEmail(email, req.user?.companyId);
   }
 
-  @UseGuards(AuthGuard, RolesGuard)
-  @Roles('admin')
+  @AuthRoles('admin')
   @Get(':id')
   findOne(
     @Param('id') id: number,
@@ -59,8 +57,7 @@ export class UsersController {
     return this.usersService.findById(id, req.user?.companyId);
   }
 
-  @UseGuards(AuthGuard, RolesGuard)
-  @Roles('admin')
+  @AuthRoles('admin')
   @HttpCode(HttpStatus.CREATED)
   @Post('create')
   createUser(
@@ -77,7 +74,7 @@ export class UsersController {
     });
   }
 
-  @UseGuards(AuthGuard)
+  @Auth()
   @HttpCode(HttpStatus.OK)
   @Patch('me')
   async updateProfile(
@@ -100,8 +97,7 @@ export class UsersController {
     };
   }
 
-  @UseGuards(AuthGuard, RolesGuard)
-  @Roles('admin')
+  @AuthRoles('admin')
   @HttpCode(HttpStatus.OK)
   @Patch('me/company')
   async updateMyCompany(
@@ -119,8 +115,7 @@ export class UsersController {
     };
   }
 
-  @UseGuards(AuthGuard, RolesGuard)
-  @Roles('admin')
+  @AuthRoles('admin')
   @HttpCode(HttpStatus.OK)
   @Patch(':id')
   updateUser(
@@ -142,8 +137,7 @@ export class UsersController {
     );
   }
 
-  @UseGuards(AuthGuard, RolesGuard)
-  @Roles('admin')
+  @AuthRoles('admin')
   @HttpCode(HttpStatus.OK)
   @Delete(':id')
   async deleteUser(

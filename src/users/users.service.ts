@@ -227,14 +227,33 @@ export class UsersService {
     });
   }
 
-  async findByEmail(email: string): Promise<Users | undefined | null> {
-    const user = await this.prisma.user.findUnique({
+  async findByEmail(
+    email: string,
+    companyId?: number,
+  ): Promise<Users | undefined | null> {
+    const user = await this.prisma.user.findFirst({
       where: {
         email: email,
+        ...(companyId ? { companyId } : {}),
       },
       include: { company: true },
     });
     return this.attachSubscription(user);
+  }
+
+  /** Búsqueda por email sin exponer la contraseña (endpoint de consulta). */
+  async findSafeByEmail(
+    email: string,
+    companyId?: number,
+  ): Promise<SafeUser | null> {
+    const row = await this.prisma.user.findFirst({
+      where: {
+        email,
+        ...(companyId ? { companyId } : {}),
+      },
+      select: USER_SAFE_SELECT,
+    });
+    return row ? toSafeUser(row) : null;
   }
 
   /** Adjunta la suscripción de la empresa al usuario para construir el JWT. */

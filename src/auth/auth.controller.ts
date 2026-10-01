@@ -8,9 +8,11 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { CreateLoginDto, RegisterDto } from './dto/auth.dto';
+import { Public } from './public.decorator';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 
+@Public()
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -28,9 +30,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('register')
   register(@Body() signInDto: RegisterDto) {
-    console.log('Register DTO:', signInDto);
     this.logger.info('Starting register function');
-    console.log('Register DTO:', signInDto);
     return this.authService.register(signInDto);
   }
 }

@@ -18,6 +18,8 @@ model Product {
   sku           String
   type          String
   category      String
+  categoryId    Int?
+  categoryRef   Category?   @relation(fields: [categoryId], references: [id])
   image         String?
   sizes         Json?
   createdAt     DateTime       @default(now())

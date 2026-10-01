@@ -2,7 +2,12 @@
   "moduleFileExtensions": ["js", "json", "ts"],
   "rootDir": ".",
   "testEnvironment": "node",
+  "setupFiles": ["dotenv/config"],
   "testRegex": ".e2e-spec.ts$",
+  "moduleNameMapper": {
+    "^src/(.*)$": "<rootDir>/../src/$1"
+  },
+  "transformIgnorePatterns": ["node_modules/(?!(uuid|@nestjs/schedule)/)"],
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   }

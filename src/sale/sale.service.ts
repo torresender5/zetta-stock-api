@@ -1,8 +1,13 @@
-import { Inject, Injectable, BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
-import { ListSalesQueryDto } from './dto/sale.dto';
+import { ListSalesQueryDto, UpdateSaleDto } from './dto/sale.dto';
 import { round2 } from 'src/common/round';
 
 const WALK_IN_CLIENT_NAME = 'Consumidor final';
@@ -428,7 +433,7 @@ export class SaleService {
       }
 
       return { sale, invoice };
-    });
+    }, { timeout: 15000 });
 
     return result;
   }
@@ -582,9 +587,251 @@ export class SaleService {
         }
 
         return sale;
-      });
+      }, { timeout: 15000 });
 
       return result;
+    } catch (error) {
+      this.logger.error(`Error updating sale ${id}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Edición de una venta con allowlist de campos:
+   * - Cualquier estado: solo `notes`.
+   * - Estado `pending`: además cliente, fecha, método de pago y líneas
+   *   (recalcula totales y ajusta el stock con validación de disponibilidad).
+   * Nunca se reabren ventas pagadas/canceladas ni se mueve caja.
+   */
+  async update(id: number, data: UpdateSaleDto, companyId?: number) {
+    try {
+      this.logger.info(`Updating sale: ${id}`);
+      const existing = await this.prisma.sale.findFirst({
+        where: { id, ...(companyId ? { companyId } : {}) },
+        include: { items: true },
+      });
+      if (!existing) {
+        throw new NotFoundException('Venta no encontrada');
+      }
+
+      const restrictedChanged =
+        data.clientId !== undefined ||
+        data.date !== undefined ||
+        data.paymentMethod !== undefined ||
+        data.items !== undefined;
+      if (restrictedChanged && existing.paymentStatus !== 'pending') {
+        throw new BadRequestException(
+          'Solo se pueden editar los datos de una venta pendiente. ' +
+            'Las ventas pagadas o canceladas solo permiten modificar las notas.',
+        );
+      }
+
+      if (!restrictedChanged) {
+        if (data.notes === undefined) {
+          throw new BadRequestException('No se enviaron cambios para aplicar');
+        }
+        return await this.prisma.sale.update({
+          where: { id },
+          data: { notes: data.notes || null },
+          include: { items: true, client: true },
+        });
+      }
+
+      const inVES = (usd: number | null | undefined): number | null =>
+        usd != null && existing.fxRate
+          ? round2(Number(usd) * existing.fxRate)
+          : null;
+
+      return await this.prisma.$transaction(async (tx) => {
+        // Cliente (allowlist, solo pending)
+        let clientId = existing.clientId;
+        let clientRecord: any = null;
+        if (data.clientId !== undefined) {
+          clientRecord = await this.resolveClient(companyId, data.clientId);
+          clientId = clientRecord.id;
+        }
+
+        let subtotal = existing.subtotal;
+        let tax = existing.tax;
+        let total = existing.total;
+
+        if (data.items !== undefined) {
+          if (!Array.isArray(data.items) || data.items.length === 0) {
+            throw new BadRequestException(
+              'La venta debe tener al menos una línea',
+            );
+          }
+
+          // Delta de stock por producto+talla: (nuevo - anterior)
+          const deltas = new Map<
+            string,
+            { productId: number; size: string | null; delta: number }
+          >();
+          const addDelta = (
+            productId: number,
+            size: string | null | undefined,
+            qty: number,
+          ) => {
+            const key = `${productId}|${size ?? ''}`;
+            const current = deltas.get(key) ?? {
+              productId,
+              size: size ?? null,
+              delta: 0,
+            };
+            current.delta += qty;
+            deltas.set(key, current);
+          };
+          for (const item of existing.items) {
+            addDelta(Number(item.productId), item.size, -Number(item.quantity));
+          }
+          for (const item of data.items) {
+            addDelta(
+              Number(item.productId),
+              item.size ?? null,
+              Number(item.quantity),
+            );
+          }
+
+          subtotal = data.items.reduce(
+            (sum, item) => sum + Number(item.subtotal),
+            0,
+          );
+          tax = Math.round(subtotal * 0.19);
+          total = subtotal + tax;
+
+          for (const { productId, size, delta } of deltas.values()) {
+            if (delta === 0) {
+              continue;
+            }
+            const product = await tx.product.findFirst({
+              where: { id: productId, ...(companyId ? { companyId } : {}) },
+            });
+            if (!product) {
+              throw new NotFoundException(
+                `Producto ${productId} no encontrado`,
+              );
+            }
+
+            const sizeStock = (product.sizes as any[]) ?? [];
+            if (Array.isArray(sizeStock) && sizeStock.length > 0) {
+              if (!size) {
+                throw new BadRequestException(
+                  `El producto "${product.name}" requiere seleccionar una talla`,
+                );
+              }
+              const sizeIndex = sizeStock.findIndex((s) => s.size === size);
+              if (sizeIndex === -1) {
+                throw new BadRequestException(
+                  `Talla "${size}" no válida para "${product.name}"`,
+                );
+              }
+              const sizeQty = Number(sizeStock[sizeIndex].stock ?? 0);
+              if (delta > sizeQty) {
+                throw new BadRequestException(
+                  `Stock insuficiente de "${product.name}" (talla ${size}): ` +
+                    `disponible ${sizeQty}`,
+                );
+              }
+              const updateSizes = sizeStock.map((s, i) =>
+                i === sizeIndex ? { ...s, stock: sizeQty - delta } : s,
+              );
+              const updateStock = updateSizes.reduce(
+                (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
+                0,
+              );
+              await tx.product.update({
+                where: { id: productId },
+                data: { stock: updateStock, sizes: updateSizes },
+              });
+            } else {
+              const currentStock = Number(product.stock);
+              if (delta > currentStock) {
+                throw new BadRequestException(
+                  `Stock insuficiente de "${product.name}": disponible ${currentStock}`,
+                );
+              }
+              await tx.product.update({
+                where: { id: productId },
+                data: { stock: currentStock - delta },
+              });
+            }
+          }
+
+          // Reemplaza todas las líneas
+          await tx.saleItem.deleteMany({ where: { saleId: id } });
+          await tx.saleItem.createMany({
+            data: data.items.map((item) => ({
+              saleId: id,
+              productId: Number(item.productId),
+              productName: item.productName,
+              size: item.size || null,
+              quantity: Number(item.quantity),
+              unitPrice: Number(item.unitPrice),
+              subtotal: Number(item.subtotal),
+              unitPriceVes: inVES(Number(item.unitPrice)),
+              subtotalVes: inVES(Number(item.subtotal)),
+            })),
+          });
+        }
+
+        const date =
+          data.date !== undefined ? new Date(data.date) : existing.date;
+        const received = existing.receivedAmount;
+        const changeAmount =
+          received != null && received > total ? received - total : null;
+
+        const sale = await tx.sale.update({
+          where: { id },
+          data: {
+            ...(data.notes !== undefined ? { notes: data.notes || null } : {}),
+            ...(data.paymentMethod !== undefined
+              ? { paymentMethod: data.paymentMethod }
+              : {}),
+            clientId,
+            date,
+            subtotal,
+            tax,
+            total,
+            ...(data.items !== undefined
+              ? {
+                  subtotalVes: inVES(subtotal),
+                  taxVes: inVES(tax),
+                  totalVes: inVES(total),
+                  changeAmount,
+                  changeAmountVes: inVES(changeAmount),
+                }
+              : {}),
+          },
+          include: {
+            items: true,
+            client: true,
+          },
+        });
+
+        // Sincroniza la factura (montos, fecha y snapshot del cliente)
+        await tx.invoice.updateMany({
+          where: { saleId: id, ...(companyId ? { companyId } : {}) },
+          data: {
+            date,
+            clientId,
+            ...(clientRecord
+              ? {
+                  clientName: clientRecord.name,
+                  clientDocument: clientRecord.document,
+                  clientAddress: clientRecord.address,
+                }
+              : {}),
+            subtotal,
+            tax,
+            total,
+            subtotalVes: inVES(subtotal),
+            taxVes: inVES(tax),
+            totalVes: inVES(total),
+          },
+        });
+
+        return sale;
+      }, { timeout: 15000 });
     } catch (error) {
       this.logger.error(`Error updating sale ${id}:`, error);
       throw error;

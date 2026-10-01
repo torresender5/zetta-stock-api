@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
@@ -85,11 +85,52 @@ export class ProductService {
     }
   }
 
+  /**
+   * Resuelve la categoría del producto: si llega categoryId se valida contra
+   * Category (tenant) y el nombre denormalizado se sincroniza con la categoría;
+   * si solo llega el nombre se intenta enlazar con la categoría existente.
+   */
+  private async resolveCategory(data: any, companyId?: number) {
+    const resolved: { category?: string; categoryId?: number | null } = {};
+    const categoryId =
+      data.categoryId !== undefined &&
+      data.categoryId !== null &&
+      data.categoryId !== ''
+        ? Number(data.categoryId)
+        : undefined;
+
+    if (categoryId !== undefined) {
+      const category = await this.productPrisma.category.findFirst({
+        where: { id: categoryId, ...(companyId ? { companyId } : {}) },
+      });
+      if (!category) {
+        throw new BadRequestException('Categoría no encontrada');
+      }
+      resolved.categoryId = category.id;
+      resolved.category = category.name;
+    } else if (data.category) {
+      resolved.category = data.category;
+      const category = await this.productPrisma.category.findFirst({
+        where: {
+          name: { equals: data.category, mode: 'insensitive' },
+          ...(companyId ? { companyId } : {}),
+        },
+      });
+      resolved.categoryId = category ? category.id : null;
+    }
+    return resolved;
+  }
+
   async create(data: any, file?: Express.Multer.File, companyId?: number) {
     try {
       this.logger.info('Creating product:', { name: data.name });
+      const resolvedCategory = await this.resolveCategory(data, companyId);
+      if (!resolvedCategory.category) {
+        throw new BadRequestException('La categoría es requerida');
+      }
       const createData: any = {
         ...data,
+        ...resolvedCategory,
         companyId,
         purchasePrice: Number(data.purchasePrice),
         salePrice: Number(data.salePrice),
@@ -123,7 +164,10 @@ export class ProductService {
       if (!product) {
         throw new Error('Producto no encontrado');
       }
-      const updateData: any = { ...data };
+      const updateData: any = {
+        ...data,
+        ...(await this.resolveCategory(data, companyId)),
+      };
       if (data.purchasePrice !== undefined)
         updateData.purchasePrice = Number(data.purchasePrice);
       if (data.salePrice !== undefined)

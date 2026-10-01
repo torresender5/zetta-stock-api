@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   HttpCode,
   HttpStatus,
@@ -19,6 +20,7 @@ import { Logger } from 'winston';
 import {
   CreateSaleDto,
   ListSalesQueryDto,
+  UpdateSaleDto,
   UpdateSalePaymentStatusDto,
   UpdateInvoiceStatusDto,
 } from './dto/sale.dto';
@@ -84,6 +86,19 @@ export class SaleController {
       data.paymentMethod,
       req.user.sub,
     );
+  }
+
+  @AuthRoles('admin', 'vendedor')
+  @HttpCode(HttpStatus.OK)
+  @Put(':id')
+  update(
+    @Param('id') id: string,
+    @Body() data: UpdateSaleDto,
+    @Req() req: Request & { user: AuthUserPayload },
+  ) {
+    const saleId = parseInt(id, 10);
+    this.logger.info(`Starting SaleController Update Sale: ${saleId}`);
+    return this.saleService.update(saleId, data, req.user?.companyId);
   }
 }
 

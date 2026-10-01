@@ -8,7 +8,6 @@ import {
 import { UsersService } from 'src/users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
-import { MailService } from '../email/mail.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { RegisterDto } from './dto/auth.dto';
@@ -19,7 +18,6 @@ export class AuthService {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
-    private mailService: MailService,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
   ) {}
   // private readonly logger = new Logger(UsersController.name);
@@ -57,7 +55,6 @@ export class AuthService {
     }
     const payload = buildAuthPayload(user);
     this.logger.debug(payload);
-    await this.mailService.sendUserConfirmation(user, 'Hola');
 
     return {
       access_token: await this.jwtService.signAsync(payload),

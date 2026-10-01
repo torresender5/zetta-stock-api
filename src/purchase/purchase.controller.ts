@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   HttpCode,
   HttpStatus,
   Body,
@@ -18,7 +19,7 @@ import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import {
   CreatePurchaseDto,
-  UpdatePurchasePaymentStatusDto,
+  UpdatePurchaseDto,
   PurchaseQueryDto,
 } from './dto/purchase.dto';
 
@@ -64,19 +65,29 @@ export class PurchaseController {
   @AuthRoles('admin', 'inventario')
   @HttpCode(HttpStatus.OK)
   @Patch(':id')
-  updatePaymentStatus(
+  update(
     @Param('id') id: string,
-    @Body() data: UpdatePurchasePaymentStatusDto,
+    @Body() data: UpdatePurchaseDto,
     @Req() req: Request & { user: AuthUserPayload },
   ) {
     const purchaseId = parseInt(id, 10);
     this.logger.info(
-      `Starting PurchaseController Update Payment Status: ${purchaseId}`,
+      `Starting PurchaseController Update Purchase: ${purchaseId}`,
     );
-    return this.purchaseService.updatePaymentStatus(
-      purchaseId,
-      data.paymentStatus,
-      req.user?.companyId,
+    return this.purchaseService.update(purchaseId, data, req.user?.companyId);
+  }
+
+  @AuthRoles('admin', 'inventario')
+  @HttpCode(HttpStatus.OK)
+  @Delete(':id')
+  remove(
+    @Param('id') id: string,
+    @Req() req: Request & { user: AuthUserPayload },
+  ) {
+    const purchaseId = parseInt(id, 10);
+    this.logger.info(
+      `Starting PurchaseController Delete Purchase: ${purchaseId}`,
     );
+    return this.purchaseService.remove(purchaseId, req.user?.companyId);
   }
 }

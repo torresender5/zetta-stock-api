@@ -88,4 +88,69 @@ describe('SubscriptionGuard', () => {
       ),
     ).resolves.toBe(true);
   });
+
+  it('bloquea rutas de un módulo que no está en el plan', async () => {
+    prisma.subscription.findUnique.mockResolvedValue({
+      status: 'active',
+      trialEndsAt: null,
+      expiresAt: new Date(Date.now() + 86400000),
+      plan: { key: 'free', allowedViews: ['dashboard', 'products'] },
+    });
+    try {
+      await guard.canActivate(
+        context({ sub: 2, companyId: 5, name: 'user' }, '/reports/sales'),
+      );
+      fail('Debió lanzar ForbiddenException');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ForbiddenException);
+      expect((error as ForbiddenException).getResponse()).toMatchObject({
+        code: 'PLAN_VIEW_DENIED',
+      });
+    }
+  });
+
+  it('permite rutas incluidas en el plan', async () => {
+    prisma.subscription.findUnique.mockResolvedValue({
+      status: 'active',
+      trialEndsAt: null,
+      expiresAt: new Date(Date.now() + 86400000),
+      plan: { key: 'pro', allowedViews: ['dashboard', 'reports'] },
+    });
+    await expect(
+      guard.canActivate(
+        context({ sub: 2, companyId: 5, name: 'user' }, '/reports/sales'),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('usa los defaults del plan cuando allowedViews está vacío', async () => {
+    prisma.subscription.findUnique.mockResolvedValue({
+      status: 'active',
+      trialEndsAt: null,
+      expiresAt: new Date(Date.now() + 86400000),
+      plan: { key: 'pro', allowedViews: [] },
+    });
+    await expect(
+      guard.canActivate(
+        context({ sub: 2, companyId: 5, name: 'user' }, '/apartados'),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('las cuentas por cobrar (free) siguen permitidas bajo /reports', async () => {
+    prisma.subscription.findUnique.mockResolvedValue({
+      status: 'active',
+      trialEndsAt: null,
+      expiresAt: new Date(Date.now() + 86400000),
+      plan: { key: 'free', allowedViews: ['accountsReceivable'] },
+    });
+    await expect(
+      guard.canActivate(
+        context(
+          { sub: 2, companyId: 5, name: 'user' },
+          '/reports/accounts-receivable',
+        ),
+      ),
+    ).resolves.toBe(true);
+  });
 });
