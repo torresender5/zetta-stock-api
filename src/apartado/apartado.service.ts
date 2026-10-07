@@ -16,6 +16,7 @@ import {
   ListApartadosQueryDto,
 } from './apartado.dto';
 import { round2 } from 'src/common/round';
+import { getCompanySettings } from 'src/company/company-settings.util';
 
 @Injectable()
 export class ApartadoService {
@@ -146,7 +147,8 @@ export class ApartadoService {
         Math.round(
           items.reduce((sum: number, i: any) => sum + i.subtotal, 0) * 100,
         ) / 100;
-      const tax = Math.round(subtotal * 0.19 * 100) / 100;
+      const { taxRate } = await getCompanySettings(this.prisma, companyId);
+      const tax = Math.round(subtotal * (taxRate / 100) * 100) / 100;
       const total = Math.round((subtotal + tax) * 100) / 100;
 
       const initialPayment = Number(data.initialPayment) || 0;

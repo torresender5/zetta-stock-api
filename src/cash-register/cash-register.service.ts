@@ -8,12 +8,14 @@ import {
   OpenCashRegisterDto,
 } from './dto/cash-register.dto';
 import { round2 } from 'src/common/round';
+import { NotificationService } from 'src/notification/notification.service';
 
 @Injectable()
 export class CashRegisterService {
   constructor(
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     private prisma: PrismaService,
+    private notifications: NotificationService,
   ) {}
 
   async findAll(companyId?: number, status?: string, page = 1, limit = 20) {
@@ -146,6 +148,17 @@ export class CashRegisterService {
         return created;
       });
 
+      // Notificación in-app: recuerda al usuario que la caja sigue abierta
+      // (visible también al iniciar la app — Fase 5.3).
+      await this.notifications.notify({
+        companyId,
+        userId,
+        type: 'cash_open',
+        title: 'Caja abierta',
+        body: `${register.name} · abre con ${register.baseAmount}. Recuerda cerrarla al terminar.`,
+        dedupeKey: 'cash_open',
+      });
+
       return register;
     } catch (error) {
       this.logger.error('Error opening cash register:', error);
@@ -253,6 +266,9 @@ export class CashRegisterService {
         });
         return updated;
       });
+
+      // La caja ya no está abierta: retira la notificación pendiente (Fase 5.3)
+      await this.notifications.clearUnreadByType(companyId, 'cash_open');
 
       return closed;
     } catch (error) {

@@ -4,11 +4,20 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
-import { ListSalesQueryDto, UpdateSaleDto } from './dto/sale.dto';
+import {
+  ListInvoicesQueryDto,
+  ListSalesQueryDto,
+  UpdateSaleDto,
+} from './dto/sale.dto';
 import { round2 } from 'src/common/round';
+import {
+  CompanySettings,
+  getCompanySettings,
+} from 'src/company/company-settings.util';
 
 const WALK_IN_CLIENT_NAME = 'Consumidor final';
 const WALK_IN_CLIENT_EMAIL = 'consumidor-final@zettastock.local';
@@ -120,6 +129,9 @@ export class SaleService {
       // Si no se envía clientId se usa el cliente genérico "Consumidor final"
       const client = await this.resolveClient(companyId, data.clientId);
 
+      // Configuración de la empresa (% IVA y numeración — Fase 5.5)
+      const settings = await getCompanySettings(this.prisma, companyId);
+
       // Verify all products belong to the same company
       for (const item of data.items) {
         const product = await this.prisma.product.findFirst({
@@ -138,7 +150,7 @@ export class SaleService {
         (sum: number, item: any) => sum + item.subtotal,
         0,
       );
-      const tax = Math.round(subtotal * 0.19);
+      const tax = Math.round(subtotal * (settings.taxRate / 100));
       const total = subtotal + tax;
 
       // Generate sequential sale number per company and year, retrying on
@@ -153,7 +165,7 @@ export class SaleService {
               date: { gte: new Date(`${year}-01-01`) },
             },
           })) + 1;
-        const saleNumber = `VEN-${year}-${String(seq).padStart(4, '0')}`;
+        const saleNumber = `${settings.salePrefix}-${year}-${String(seq).padStart(4, '0')}`;
         try {
           return await this.createWithSaleNumber(
             data,
@@ -164,6 +176,7 @@ export class SaleService {
             total,
             saleNumber,
             register,
+            settings,
           );
         } catch (error: any) {
           if (error?.code !== 'P2002' || attempt === maxAttempts - 1) {
@@ -277,6 +290,7 @@ export class SaleService {
     total: number,
     saleNumber: string,
     register?: any,
+    settings?: CompanySettings,
   ) {
     const changeAmount =
       data.receivedAmount != null && Number(data.receivedAmount) > total
@@ -288,152 +302,156 @@ export class SaleService {
       usd != null && fxRate ? round2(Number(usd) * fxRate) : null;
 
     // Create sale with items and invoice in a transaction
-    const result = await this.prisma.$transaction(async (tx) => {
-      // Create the sale
-      const sale = await tx.sale.create({
-        data: {
-          companyId,
-          saleNumber,
-          clientId: client.id,
-          date: new Date(data.date),
-          subtotal,
-          tax,
-          total,
-          paymentStatus: data.paymentStatus,
-          paymentMethod: data.paymentMethod || 'cash',
-          receivedAmount:
-            data.receivedAmount != null ? Number(data.receivedAmount) : null,
-          changeAmount,
-          fxRate: fxRate ?? null,
-          subtotalVes: inVES(subtotal),
-          taxVes: inVES(tax),
-          totalVes: inVES(total),
-          receivedAmountVes:
-            data.receivedAmount != null
-              ? inVES(Number(data.receivedAmount))
-              : null,
-          changeAmountVes: changeAmount != null ? inVES(changeAmount) : null,
-          items: {
-            create: data.items.map((item: any) => ({
-              productId: Number(item.productId),
-              productName: item.productName,
-              size: item.size || null,
-              quantity: Number(item.quantity),
-              unitPrice: Number(item.unitPrice),
-              subtotal: Number(item.subtotal),
-              unitPriceVes: inVES(Number(item.unitPrice)),
-              subtotalVes: inVES(Number(item.subtotal)),
-            })),
-          },
-        },
-        include: {
-          items: true,
-          client: true,
-        },
-      });
-
-      // Create the invoice
-      const year = new Date().getFullYear();
-      const invoiceSeq = Math.floor(Math.random() * 9000) + 1000;
-      const invoiceNumber = `FAC-${year}-${invoiceSeq}`;
-      const invoice = await tx.invoice.create({
-        data: {
-          invoiceNumber,
-          saleId: sale.id,
-          companyId,
-          clientId: client.id,
-          clientName: client.name,
-          clientDocument: client.document,
-          clientAddress: client.address,
-          date: new Date(data.date),
-          subtotal,
-          tax,
-          total,
-          fxRate: fxRate ?? null,
-          subtotalVes: inVES(subtotal),
-          taxVes: inVES(tax),
-          totalVes: inVES(total),
-          status: data.paymentStatus,
-        },
-      });
-
-      // Update product stock (handle sizes like purchases)
-      for (const item of data.items) {
-        const product = await tx.product.findFirst({
-          where: {
-            id: Number(item.productId),
-            ...(companyId ? { companyId } : {}),
-          },
-        });
-        if (!product) {
-          throw new Error(`Product ${item.productId} not found`);
-        }
-
-        const sizeStock = (product.sizes as any[]) ?? [];
-        let updateStock: number;
-        let updateSizes: any;
-
-        if (Array.isArray(sizeStock) && sizeStock.length > 0) {
-          // Product with sizes: require a size per line
-          if (!item.size) {
-            throw new Error(
-              `El producto "${product.name}" requiere seleccionar una talla`,
-            );
-          }
-          const sizeIndex = sizeStock.findIndex((s) => s.size === item.size);
-          if (sizeIndex === -1) {
-            throw new Error(
-              `Talla "${item.size}" no válida para "${product.name}"`,
-            );
-          }
-          updateSizes = sizeStock.map((s, i) =>
-            i === sizeIndex
-              ? {
-                  ...s,
-                  stock: Math.max(
-                    0,
-                    (Number(s.stock) ?? 0) - Number(item.quantity),
-                  ),
-                }
-              : s,
-          );
-          updateStock = updateSizes.reduce(
-            (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
-            0,
-          );
-        } else {
-          updateStock = Number(product.stock) - Number(item.quantity);
-          updateSizes = undefined;
-        }
-
-        await tx.product.update({
-          where: { id: Number(item.productId) },
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        // Create the sale
+        const sale = await tx.sale.create({
           data: {
-            stock: Math.max(0, updateStock),
-            ...(updateSizes !== undefined ? { sizes: updateSizes } : {}),
-          },
-        });
-      }
-
-      // Register the cash movement for paid sales
-      if (data.paymentStatus === 'paid' && register) {
-        await tx.cashMovement.create({
-          data: {
-            cashRegisterId: register.id,
             companyId,
-            saleId: sale.id,
-            type: 'sale',
+            saleNumber,
+            clientId: client.id,
+            date: new Date(data.date),
+            subtotal,
+            tax,
+            total,
+            paymentStatus: data.paymentStatus,
             paymentMethod: data.paymentMethod || 'cash',
-            amount: total,
-            amountVes: inVES(total),
+            receivedAmount:
+              data.receivedAmount != null ? Number(data.receivedAmount) : null,
+            changeAmount,
             fxRate: fxRate ?? null,
-            description: `Venta ${saleNumber}`,
+            subtotalVes: inVES(subtotal),
+            taxVes: inVES(tax),
+            totalVes: inVES(total),
+            receivedAmountVes:
+              data.receivedAmount != null
+                ? inVES(Number(data.receivedAmount))
+                : null,
+            changeAmountVes: changeAmount != null ? inVES(changeAmount) : null,
+            items: {
+              create: data.items.map((item: any) => ({
+                productId: Number(item.productId),
+                productName: item.productName,
+                size: item.size || null,
+                quantity: Number(item.quantity),
+                unitPrice: Number(item.unitPrice),
+                subtotal: Number(item.subtotal),
+                unitPriceVes: inVES(Number(item.unitPrice)),
+                subtotalVes: inVES(Number(item.subtotal)),
+              })),
+            },
+          },
+          include: {
+            items: true,
+            client: true,
           },
         });
-      }
 
-      return { sale, invoice };
-    }, { timeout: 15000 });
+        // Create the invoice
+        const year = new Date().getFullYear();
+        const invoiceSeq = Math.floor(Math.random() * 9000) + 1000;
+        const invoicePrefix = settings?.invoicePrefix ?? 'FAC';
+        const invoiceNumber = `${invoicePrefix}-${year}-${invoiceSeq}`;
+        const invoice = await tx.invoice.create({
+          data: {
+            invoiceNumber,
+            saleId: sale.id,
+            companyId,
+            clientId: client.id,
+            clientName: client.name,
+            clientDocument: client.document,
+            clientAddress: client.address,
+            date: new Date(data.date),
+            subtotal,
+            tax,
+            total,
+            fxRate: fxRate ?? null,
+            subtotalVes: inVES(subtotal),
+            taxVes: inVES(tax),
+            totalVes: inVES(total),
+            status: data.paymentStatus,
+          },
+        });
+
+        // Update product stock (handle sizes like purchases)
+        for (const item of data.items) {
+          const product = await tx.product.findFirst({
+            where: {
+              id: Number(item.productId),
+              ...(companyId ? { companyId } : {}),
+            },
+          });
+          if (!product) {
+            throw new Error(`Product ${item.productId} not found`);
+          }
+
+          const sizeStock = (product.sizes as any[]) ?? [];
+          let updateStock: number;
+          let updateSizes: any;
+
+          if (Array.isArray(sizeStock) && sizeStock.length > 0) {
+            // Product with sizes: require a size per line
+            if (!item.size) {
+              throw new Error(
+                `El producto "${product.name}" requiere seleccionar una talla`,
+              );
+            }
+            const sizeIndex = sizeStock.findIndex((s) => s.size === item.size);
+            if (sizeIndex === -1) {
+              throw new Error(
+                `Talla "${item.size}" no válida para "${product.name}"`,
+              );
+            }
+            updateSizes = sizeStock.map((s, i) =>
+              i === sizeIndex
+                ? {
+                    ...s,
+                    stock: Math.max(
+                      0,
+                      (Number(s.stock) ?? 0) - Number(item.quantity),
+                    ),
+                  }
+                : s,
+            );
+            updateStock = updateSizes.reduce(
+              (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
+              0,
+            );
+          } else {
+            updateStock = Number(product.stock) - Number(item.quantity);
+            updateSizes = undefined;
+          }
+
+          await tx.product.update({
+            where: { id: Number(item.productId) },
+            data: {
+              stock: Math.max(0, updateStock),
+              ...(updateSizes !== undefined ? { sizes: updateSizes } : {}),
+            },
+          });
+        }
+
+        // Register the cash movement for paid sales
+        if (data.paymentStatus === 'paid' && register) {
+          await tx.cashMovement.create({
+            data: {
+              cashRegisterId: register.id,
+              companyId,
+              saleId: sale.id,
+              type: 'sale',
+              paymentMethod: data.paymentMethod || 'cash',
+              amount: total,
+              amountVes: inVES(total),
+              fxRate: fxRate ?? null,
+              description: `Venta ${saleNumber}`,
+            },
+          });
+        }
+
+        return { sale, invoice };
+      },
+      { timeout: 15000 },
+    );
 
     return result;
   }
@@ -476,118 +494,121 @@ export class SaleService {
         );
       }
 
-      const result = await this.prisma.$transaction(async (tx) => {
-        // Restore stock when cancelling
-        if (paymentStatus === 'cancelled') {
-          for (const item of existing.items) {
-            await tx.product.update({
-              where: { id: item.productId },
-              data: {
-                stock: {
-                  increment: Number(item.quantity),
+      const result = await this.prisma.$transaction(
+        async (tx) => {
+          // Restore stock when cancelling
+          if (paymentStatus === 'cancelled') {
+            for (const item of existing.items) {
+              await tx.product.update({
+                where: { id: item.productId },
+                data: {
+                  stock: {
+                    increment: Number(item.quantity),
+                  },
                 },
-              },
-            });
+              });
+            }
           }
-        }
 
-        const sale = await tx.sale.update({
-          where: { id },
-          data: {
-            paymentStatus,
-            cancelledReason:
-              paymentStatus === 'cancelled' ? cancelledReason || null : null,
-            refundAmount:
-              paymentStatus === 'cancelled' ? (refundAmount ?? null) : null,
-            refundAmountVes:
-              paymentStatus === 'cancelled' &&
-              refundAmount != null &&
-              existing.fxRate
-                ? round2(refundAmount * existing.fxRate)
-                : null,
-            refundMethod:
-              paymentStatus === 'cancelled' ? refundMethod || null : null,
-            ...(paymentStatus === 'paid' && newPaymentMethod
-              ? { paymentMethod: newPaymentMethod }
-              : {}),
-          },
-          include: {
-            items: true,
-            client: true,
-          },
-        });
+          const sale = await tx.sale.update({
+            where: { id },
+            data: {
+              paymentStatus,
+              cancelledReason:
+                paymentStatus === 'cancelled' ? cancelledReason || null : null,
+              refundAmount:
+                paymentStatus === 'cancelled' ? (refundAmount ?? null) : null,
+              refundAmountVes:
+                paymentStatus === 'cancelled' &&
+                refundAmount != null &&
+                existing.fxRate
+                  ? round2(refundAmount * existing.fxRate)
+                  : null,
+              refundMethod:
+                paymentStatus === 'cancelled' ? refundMethod || null : null,
+              ...(paymentStatus === 'paid' && newPaymentMethod
+                ? { paymentMethod: newPaymentMethod }
+                : {}),
+            },
+            include: {
+              items: true,
+              client: true,
+            },
+          });
 
-        // Also update the invoice status
-        await tx.invoice.updateMany({
-          where: { saleId: id, ...(companyId ? { companyId } : {}) },
-          data: {
-            status: paymentStatus,
-            ...(paymentStatus === 'cancelled'
-              ? { cancelledReason: cancelledReason || null }
-              : { cancelledReason: null }),
-          },
-        });
+          // Also update the invoice status
+          await tx.invoice.updateMany({
+            where: { saleId: id, ...(companyId ? { companyId } : {}) },
+            data: {
+              status: paymentStatus,
+              ...(paymentStatus === 'cancelled'
+                ? { cancelledReason: cancelledReason || null }
+                : { cancelledReason: null }),
+            },
+          });
 
-        // Register the cash movement for money transitions
-        if (register) {
-          if (to === 'paid' && from !== 'paid') {
-            await tx.cashMovement.create({
-              data: {
-                cashRegisterId: register.id,
-                companyId,
-                saleId: id,
-                type: 'sale',
-                paymentMethod:
-                  newPaymentMethod || existing.paymentMethod || 'cash',
-                amount: existing.total,
-                amountVes:
-                  existing.fxRate != null
-                    ? round2(existing.total * existing.fxRate)
-                    : null,
-                fxRate: existing.fxRate ?? null,
-                description: `Cobro de venta ${existing.saleNumber ?? id}`,
-              },
-            });
-          } else if (to === 'pending' && from === 'paid') {
-            await tx.cashMovement.create({
-              data: {
-                cashRegisterId: register.id,
-                companyId,
-                saleId: id,
-                type: 'sale',
-                paymentMethod: existing.paymentMethod || 'cash',
-                amount: -existing.total,
-                amountVes:
-                  existing.fxRate != null
-                    ? round2(-existing.total * existing.fxRate)
-                    : null,
-                fxRate: existing.fxRate ?? null,
-                description: `Reversión a por cobrar de venta ${existing.saleNumber ?? id}`,
-              },
-            });
-          } else if (to === 'cancelled' && from === 'paid') {
-            const refund = refundAmount ?? existing.total;
-            await tx.cashMovement.create({
-              data: {
-                cashRegisterId: register.id,
-                companyId,
-                saleId: id,
-                type: 'refund',
-                paymentMethod: this.mapRefundMethod(refundMethod),
-                amount: -Number(refund),
-                amountVes:
-                  existing.fxRate != null
-                    ? round2(-Number(refund) * existing.fxRate)
-                    : null,
-                fxRate: existing.fxRate ?? null,
-                description: `Reembolso de venta cancelada ${existing.saleNumber ?? id}`,
-              },
-            });
+          // Register the cash movement for money transitions
+          if (register) {
+            if (to === 'paid' && from !== 'paid') {
+              await tx.cashMovement.create({
+                data: {
+                  cashRegisterId: register.id,
+                  companyId,
+                  saleId: id,
+                  type: 'sale',
+                  paymentMethod:
+                    newPaymentMethod || existing.paymentMethod || 'cash',
+                  amount: existing.total,
+                  amountVes:
+                    existing.fxRate != null
+                      ? round2(existing.total * existing.fxRate)
+                      : null,
+                  fxRate: existing.fxRate ?? null,
+                  description: `Cobro de venta ${existing.saleNumber ?? id}`,
+                },
+              });
+            } else if (to === 'pending' && from === 'paid') {
+              await tx.cashMovement.create({
+                data: {
+                  cashRegisterId: register.id,
+                  companyId,
+                  saleId: id,
+                  type: 'sale',
+                  paymentMethod: existing.paymentMethod || 'cash',
+                  amount: -existing.total,
+                  amountVes:
+                    existing.fxRate != null
+                      ? round2(-existing.total * existing.fxRate)
+                      : null,
+                  fxRate: existing.fxRate ?? null,
+                  description: `Reversión a por cobrar de venta ${existing.saleNumber ?? id}`,
+                },
+              });
+            } else if (to === 'cancelled' && from === 'paid') {
+              const refund = refundAmount ?? existing.total;
+              await tx.cashMovement.create({
+                data: {
+                  cashRegisterId: register.id,
+                  companyId,
+                  saleId: id,
+                  type: 'refund',
+                  paymentMethod: this.mapRefundMethod(refundMethod),
+                  amount: -Number(refund),
+                  amountVes:
+                    existing.fxRate != null
+                      ? round2(-Number(refund) * existing.fxRate)
+                      : null,
+                  fxRate: existing.fxRate ?? null,
+                  description: `Reembolso de venta cancelada ${existing.saleNumber ?? id}`,
+                },
+              });
+            }
           }
-        }
 
-        return sale;
-      }, { timeout: 15000 });
+          return sale;
+        },
+        { timeout: 15000 },
+      );
 
       return result;
     } catch (error) {
@@ -637,211 +658,326 @@ export class SaleService {
         });
       }
 
+      const settings = await getCompanySettings(this.prisma, companyId);
+
       const inVES = (usd: number | null | undefined): number | null =>
         usd != null && existing.fxRate
           ? round2(Number(usd) * existing.fxRate)
           : null;
 
-      return await this.prisma.$transaction(async (tx) => {
-        // Cliente (allowlist, solo pending)
-        let clientId = existing.clientId;
-        let clientRecord: any = null;
-        if (data.clientId !== undefined) {
-          clientRecord = await this.resolveClient(companyId, data.clientId);
-          clientId = clientRecord.id;
-        }
-
-        let subtotal = existing.subtotal;
-        let tax = existing.tax;
-        let total = existing.total;
-
-        if (data.items !== undefined) {
-          if (!Array.isArray(data.items) || data.items.length === 0) {
-            throw new BadRequestException(
-              'La venta debe tener al menos una línea',
-            );
+      return await this.prisma.$transaction(
+        async (tx) => {
+          // Cliente (allowlist, solo pending)
+          let clientId = existing.clientId;
+          let clientRecord: any = null;
+          if (data.clientId !== undefined) {
+            clientRecord = await this.resolveClient(companyId, data.clientId);
+            clientId = clientRecord.id;
           }
 
-          // Delta de stock por producto+talla: (nuevo - anterior)
-          const deltas = new Map<
-            string,
-            { productId: number; size: string | null; delta: number }
-          >();
-          const addDelta = (
-            productId: number,
-            size: string | null | undefined,
-            qty: number,
-          ) => {
-            const key = `${productId}|${size ?? ''}`;
-            const current = deltas.get(key) ?? {
-              productId,
-              size: size ?? null,
-              delta: 0,
+          let subtotal = existing.subtotal;
+          let tax = existing.tax;
+          let total = existing.total;
+
+          if (data.items !== undefined) {
+            if (!Array.isArray(data.items) || data.items.length === 0) {
+              throw new BadRequestException(
+                'La venta debe tener al menos una línea',
+              );
+            }
+
+            // Delta de stock por producto+talla: (nuevo - anterior)
+            const deltas = new Map<
+              string,
+              { productId: number; size: string | null; delta: number }
+            >();
+            const addDelta = (
+              productId: number,
+              size: string | null | undefined,
+              qty: number,
+            ) => {
+              const key = `${productId}|${size ?? ''}`;
+              const current = deltas.get(key) ?? {
+                productId,
+                size: size ?? null,
+                delta: 0,
+              };
+              current.delta += qty;
+              deltas.set(key, current);
             };
-            current.delta += qty;
-            deltas.set(key, current);
-          };
-          for (const item of existing.items) {
-            addDelta(Number(item.productId), item.size, -Number(item.quantity));
-          }
-          for (const item of data.items) {
-            addDelta(
-              Number(item.productId),
-              item.size ?? null,
-              Number(item.quantity),
+            for (const item of existing.items) {
+              addDelta(
+                Number(item.productId),
+                item.size,
+                -Number(item.quantity),
+              );
+            }
+            for (const item of data.items) {
+              addDelta(
+                Number(item.productId),
+                item.size ?? null,
+                Number(item.quantity),
+              );
+            }
+
+            subtotal = data.items.reduce(
+              (sum, item) => sum + Number(item.subtotal),
+              0,
             );
-          }
+            tax = Math.round(subtotal * (settings.taxRate / 100));
+            total = subtotal + tax;
 
-          subtotal = data.items.reduce(
-            (sum, item) => sum + Number(item.subtotal),
-            0,
-          );
-          tax = Math.round(subtotal * 0.19);
-          total = subtotal + tax;
+            for (const { productId, size, delta } of deltas.values()) {
+              if (delta === 0) {
+                continue;
+              }
+              const product = await tx.product.findFirst({
+                where: { id: productId, ...(companyId ? { companyId } : {}) },
+              });
+              if (!product) {
+                throw new NotFoundException(
+                  `Producto ${productId} no encontrado`,
+                );
+              }
 
-          for (const { productId, size, delta } of deltas.values()) {
-            if (delta === 0) {
-              continue;
+              const sizeStock = (product.sizes as any[]) ?? [];
+              if (Array.isArray(sizeStock) && sizeStock.length > 0) {
+                if (!size) {
+                  throw new BadRequestException(
+                    `El producto "${product.name}" requiere seleccionar una talla`,
+                  );
+                }
+                const sizeIndex = sizeStock.findIndex((s) => s.size === size);
+                if (sizeIndex === -1) {
+                  throw new BadRequestException(
+                    `Talla "${size}" no válida para "${product.name}"`,
+                  );
+                }
+                const sizeQty = Number(sizeStock[sizeIndex].stock ?? 0);
+                if (delta > sizeQty) {
+                  throw new BadRequestException(
+                    `Stock insuficiente de "${product.name}" (talla ${size}): ` +
+                      `disponible ${sizeQty}`,
+                  );
+                }
+                const updateSizes = sizeStock.map((s, i) =>
+                  i === sizeIndex ? { ...s, stock: sizeQty - delta } : s,
+                );
+                const updateStock = updateSizes.reduce(
+                  (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
+                  0,
+                );
+                await tx.product.update({
+                  where: { id: productId },
+                  data: { stock: updateStock, sizes: updateSizes },
+                });
+              } else {
+                const currentStock = Number(product.stock);
+                if (delta > currentStock) {
+                  throw new BadRequestException(
+                    `Stock insuficiente de "${product.name}": disponible ${currentStock}`,
+                  );
+                }
+                await tx.product.update({
+                  where: { id: productId },
+                  data: { stock: currentStock - delta },
+                });
+              }
             }
-            const product = await tx.product.findFirst({
-              where: { id: productId, ...(companyId ? { companyId } : {}) },
+
+            // Reemplaza todas las líneas
+            await tx.saleItem.deleteMany({ where: { saleId: id } });
+            await tx.saleItem.createMany({
+              data: data.items.map((item) => ({
+                saleId: id,
+                productId: Number(item.productId),
+                productName: item.productName,
+                size: item.size || null,
+                quantity: Number(item.quantity),
+                unitPrice: Number(item.unitPrice),
+                subtotal: Number(item.subtotal),
+                unitPriceVes: inVES(Number(item.unitPrice)),
+                subtotalVes: inVES(Number(item.subtotal)),
+              })),
             });
-            if (!product) {
-              throw new NotFoundException(
-                `Producto ${productId} no encontrado`,
-              );
-            }
-
-            const sizeStock = (product.sizes as any[]) ?? [];
-            if (Array.isArray(sizeStock) && sizeStock.length > 0) {
-              if (!size) {
-                throw new BadRequestException(
-                  `El producto "${product.name}" requiere seleccionar una talla`,
-                );
-              }
-              const sizeIndex = sizeStock.findIndex((s) => s.size === size);
-              if (sizeIndex === -1) {
-                throw new BadRequestException(
-                  `Talla "${size}" no válida para "${product.name}"`,
-                );
-              }
-              const sizeQty = Number(sizeStock[sizeIndex].stock ?? 0);
-              if (delta > sizeQty) {
-                throw new BadRequestException(
-                  `Stock insuficiente de "${product.name}" (talla ${size}): ` +
-                    `disponible ${sizeQty}`,
-                );
-              }
-              const updateSizes = sizeStock.map((s, i) =>
-                i === sizeIndex ? { ...s, stock: sizeQty - delta } : s,
-              );
-              const updateStock = updateSizes.reduce(
-                (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
-                0,
-              );
-              await tx.product.update({
-                where: { id: productId },
-                data: { stock: updateStock, sizes: updateSizes },
-              });
-            } else {
-              const currentStock = Number(product.stock);
-              if (delta > currentStock) {
-                throw new BadRequestException(
-                  `Stock insuficiente de "${product.name}": disponible ${currentStock}`,
-                );
-              }
-              await tx.product.update({
-                where: { id: productId },
-                data: { stock: currentStock - delta },
-              });
-            }
           }
 
-          // Reemplaza todas las líneas
-          await tx.saleItem.deleteMany({ where: { saleId: id } });
-          await tx.saleItem.createMany({
-            data: data.items.map((item) => ({
-              saleId: id,
-              productId: Number(item.productId),
-              productName: item.productName,
-              size: item.size || null,
-              quantity: Number(item.quantity),
-              unitPrice: Number(item.unitPrice),
-              subtotal: Number(item.subtotal),
-              unitPriceVes: inVES(Number(item.unitPrice)),
-              subtotalVes: inVES(Number(item.subtotal)),
-            })),
+          const date =
+            data.date !== undefined ? new Date(data.date) : existing.date;
+          const received = existing.receivedAmount;
+          const changeAmount =
+            received != null && received > total ? received - total : null;
+
+          const sale = await tx.sale.update({
+            where: { id },
+            data: {
+              ...(data.notes !== undefined
+                ? { notes: data.notes || null }
+                : {}),
+              ...(data.paymentMethod !== undefined
+                ? { paymentMethod: data.paymentMethod }
+                : {}),
+              clientId,
+              date,
+              subtotal,
+              tax,
+              total,
+              ...(data.items !== undefined
+                ? {
+                    subtotalVes: inVES(subtotal),
+                    taxVes: inVES(tax),
+                    totalVes: inVES(total),
+                    changeAmount,
+                    changeAmountVes: inVES(changeAmount),
+                  }
+                : {}),
+            },
+            include: {
+              items: true,
+              client: true,
+            },
           });
-        }
 
-        const date =
-          data.date !== undefined ? new Date(data.date) : existing.date;
-        const received = existing.receivedAmount;
-        const changeAmount =
-          received != null && received > total ? received - total : null;
+          // Sincroniza la factura (montos, fecha y snapshot del cliente)
+          await tx.invoice.updateMany({
+            where: { saleId: id, ...(companyId ? { companyId } : {}) },
+            data: {
+              date,
+              clientId,
+              ...(clientRecord
+                ? {
+                    clientName: clientRecord.name,
+                    clientDocument: clientRecord.document,
+                    clientAddress: clientRecord.address,
+                  }
+                : {}),
+              subtotal,
+              tax,
+              total,
+              subtotalVes: inVES(subtotal),
+              taxVes: inVES(tax),
+              totalVes: inVES(total),
+            },
+          });
 
-        const sale = await tx.sale.update({
-          where: { id },
-          data: {
-            ...(data.notes !== undefined ? { notes: data.notes || null } : {}),
-            ...(data.paymentMethod !== undefined
-              ? { paymentMethod: data.paymentMethod }
-              : {}),
-            clientId,
-            date,
-            subtotal,
-            tax,
-            total,
-            ...(data.items !== undefined
-              ? {
-                  subtotalVes: inVES(subtotal),
-                  taxVes: inVES(tax),
-                  totalVes: inVES(total),
-                  changeAmount,
-                  changeAmountVes: inVES(changeAmount),
-                }
-              : {}),
-          },
-          include: {
-            items: true,
-            client: true,
-          },
-        });
-
-        // Sincroniza la factura (montos, fecha y snapshot del cliente)
-        await tx.invoice.updateMany({
-          where: { saleId: id, ...(companyId ? { companyId } : {}) },
-          data: {
-            date,
-            clientId,
-            ...(clientRecord
-              ? {
-                  clientName: clientRecord.name,
-                  clientDocument: clientRecord.document,
-                  clientAddress: clientRecord.address,
-                }
-              : {}),
-            subtotal,
-            tax,
-            total,
-            subtotalVes: inVES(subtotal),
-            taxVes: inVES(tax),
-            totalVes: inVES(total),
-          },
-        });
-
-        return sale;
-      }, { timeout: 15000 });
+          return sale;
+        },
+        { timeout: 15000 },
+      );
     } catch (error) {
       this.logger.error(`Error updating sale ${id}:`, error);
       throw error;
     }
   }
 
-  async findAllInvoices(companyId?: number) {
+  /**
+   * Filtro compartido por el listado paginado y el conteo por estado de las
+   * facturas (empresa, búsqueda, fechas y —opcionalmente— estado).
+   */
+  private invoiceWhere(companyId?: number, query?: ListInvoicesQueryDto) {
+    const where: Prisma.InvoiceWhereInput = {};
+    if (companyId) {
+      where.companyId = companyId;
+    }
+    if (query?.status) {
+      where.status = query.status;
+    }
+    if (query?.search) {
+      where.OR = [
+        {
+          invoiceNumber: { contains: query.search, mode: 'insensitive' },
+        },
+        { clientName: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+    if (query?.startDate || query?.endDate) {
+      const date: { gte?: Date; lte?: Date } = {};
+      if (query.startDate) {
+        date.gte = new Date(query.startDate);
+      }
+      if (query.endDate) {
+        const end = new Date(query.endDate);
+        end.setHours(23, 59, 59, 999);
+        date.lte = end;
+      }
+      where.date = date;
+    }
+    return where;
+  }
+
+  async findAllInvoices(companyId?: number, query?: ListInvoicesQueryDto) {
     this.logger.info('Starting SaleService findAllInvoices');
-    return this.prisma.invoice.findMany({
-      where: companyId ? { companyId } : {},
+    const page = query?.page ?? 1;
+    const limit = query?.limit ?? 10;
+    const where = this.invoiceWhere(companyId, query);
+
+    try {
+      const [data, total] = await Promise.all([
+        this.prisma.invoice.findMany({
+          where,
+          include: {
+            sale: {
+              include: {
+                items: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip: (page - 1) * limit,
+          take: limit,
+        }),
+        this.prisma.invoice.count({ where }),
+      ]);
+      return {
+        data,
+        meta: {
+          total,
+          page,
+          limit,
+          totalPages: Math.max(1, Math.ceil(total / limit)),
+        },
+      };
+    } catch (error) {
+      this.logger.error('Error finding invoices:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Conteo de facturas por estado en una sola consulta. Ignora `status` (para
+   * que las tarjetas del listado no cambien con el filtro activo) pero respeta
+   * búsqueda y rango de fechas.
+   */
+  async invoiceStats(companyId?: number, query?: ListInvoicesQueryDto) {
+    this.logger.info('Starting SaleService invoiceStats');
+    const where = this.invoiceWhere(companyId, {
+      ...query,
+      status: undefined,
+    });
+
+    const grouped = await this.prisma.invoice.groupBy({
+      by: ['status'],
+      where,
+      _count: { _all: true },
+    });
+
+    const stats = { paid: 0, pending: 0, cancelled: 0, total: 0 };
+    for (const row of grouped) {
+      const count = row._count._all;
+      if (row.status === 'paid' || row.status === 'pending') {
+        stats[row.status] = count;
+      } else if (row.status === 'cancelled') {
+        stats.cancelled = count;
+      }
+      stats.total += count;
+    }
+    return stats;
+  }
+
+  async findInvoiceForExport(id: number, companyId?: number) {
+    this.logger.info(`Finding invoice for export: ${id}`);
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id, ...(companyId ? { companyId } : {}) },
       include: {
         sale: {
           include: {
@@ -849,8 +985,11 @@ export class SaleService {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
     });
+    if (!invoice) {
+      throw new NotFoundException('Factura no encontrada');
+    }
+    return invoice;
   }
 
   async updateInvoiceStatus(

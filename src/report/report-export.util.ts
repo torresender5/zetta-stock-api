@@ -41,11 +41,19 @@ export interface ExportTable {
 const COPYABLE_KEY =
   /total|amount|base|value|price|revenue|subtotal|tax|difference|balance/i;
 
-function formatCop(value: number): string {
+export function formatCop(value: number): string {
   return new Intl.NumberFormat('es-CO', {
     style: 'currency',
     currency: 'COP',
     minimumFractionDigits: 0,
+  }).format(value);
+}
+
+export function formatVes(value: number): string {
+  return new Intl.NumberFormat('es-VE', {
+    style: 'currency',
+    currency: 'VES',
+    minimumFractionDigits: 2,
   }).format(value);
 }
 
@@ -106,19 +114,19 @@ export async function exportToXlsx(table: ExportTable): Promise<Buffer> {
   return Buffer.from(buffer);
 }
 
-const BRAND = '#1e40af';
-const BRAND_HOVER = '#1e3a8a';
-const ZEBRA = '#f1f5f9';
-const GRID = '#e2e8f0';
-const TEXT_MAIN = '#111827';
-const TEXT_MUTED = '#6b7280';
-const KPI_BG = '#f8fafc';
+export const BRAND = '#1e40af';
+export const BRAND_HOVER = '#1e3a8a';
+export const ZEBRA = '#f1f5f9';
+export const GRID = '#e2e8f0';
+export const TEXT_MAIN = '#111827';
+export const TEXT_MUTED = '#6b7280';
+export const KPI_BG = '#f8fafc';
 const CHART_PALETTE = ['#1e40af', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe'];
 const ROW_HEIGHT = 19;
 const LINE_HEIGHT = 11;
 const PAD_X = 5;
 
-function formatDateTime(date: Date): string {
+export function formatDateTime(date: Date): string {
   return new Intl.DateTimeFormat('es-CO', {
     day: '2-digit',
     month: '2-digit',
@@ -126,6 +134,16 @@ function formatDateTime(date: Date): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
+}
+
+/** Convierte el stream de pdfkit en un Buffer con todo el documento. */
+export async function collectPdf(doc: PDFKit.PDFDocument): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  const readable = Readable.from(doc) as AsyncIterable<Buffer>;
+  for await (const chunk of readable) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 type Cell = { text: string; align: 'left' | 'right' };

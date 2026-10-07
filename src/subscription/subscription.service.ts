@@ -15,6 +15,8 @@ import {
 } from './subscription.constant';
 import { CreatePlanDto, UpdatePlanDto } from './dto/plan.dto';
 import { PurchaseSubscriptionDto } from './dto/purchase.dto';
+import { settlePaymentOrder } from '../payment/order-fulfillment';
+import { PaymentService } from '../payment/payment.service';
 
 interface PlanRecord {
   id: number;
@@ -39,6 +41,9 @@ interface PaymentOrderRecord {
   amount: number;
   concept: string;
   status: string;
+  provider: string;
+  currency: string;
+  checkoutUrl: string | null;
   paidAt: Date | null;
   createdAt: Date;
 }
@@ -81,14 +86,11 @@ export interface SerializedPaymentOrder {
   amount: number;
   concept: string;
   status: string;
+  provider: string;
+  currency: string;
+  checkoutUrl: string | null;
   paidAt: Date | null;
   createdAt: Date;
-}
-
-function addMonths(date: Date, months: number): Date {
-  const d = new Date(date);
-  d.setMonth(d.getMonth() + months);
-  return d;
 }
 
 function serializePlan(plan: PlanRecord): SerializedPlan {
@@ -132,6 +134,9 @@ function serializeOrder(order: PaymentOrderRecord): SerializedPaymentOrder {
     amount: order.amount,
     concept: order.concept,
     status: order.status,
+    provider: order.provider,
+    currency: order.currency,
+    checkoutUrl: order.checkoutUrl,
     paidAt: order.paidAt,
     createdAt: order.createdAt,
   };
@@ -142,6 +147,7 @@ export class SubscriptionService {
   constructor(
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     private prisma: PrismaService,
+    private paymentService: PaymentService,
   ) {}
 
   /** Planes activos visibles en el catálogo (público). */
@@ -226,6 +232,18 @@ export class SubscriptionService {
     }
 
     // Plan pago: se genera la orden pendiente; se activa al confirmarse.
+    const provider = dto.provider ?? 'manual';
+    if (provider !== 'manual') {
+      const available = this.paymentService.availability();
+      if (!available[provider]) {
+        throw new BadRequestException(
+          provider === 'stripe'
+            ? 'Pagos con tarjeta (Stripe) no disponibles'
+            : 'Pagos con Pabilo no disponibles',
+        );
+      }
+    }
+
     const order = await this.prisma.paymentOrder.create({
       data: {
         companyId,
@@ -235,12 +253,32 @@ export class SubscriptionService {
         concept: `Suscripción ${plan.name} ${
           dto.period === 'yearly' ? 'anual' : 'mensual'
         }`,
+        provider,
       },
     });
 
+    let checkoutUrl: string | null = null;
+    if (provider !== 'manual') {
+      try {
+        const checkout = await this.paymentService.createCheckout(
+          order,
+          provider,
+        );
+        checkoutUrl = checkout.checkoutUrl;
+      } catch (error) {
+        this.logger.error(
+          `No se pudo iniciar el checkout ${provider} para la orden ${order.id}`,
+          error,
+        );
+        throw new BadRequestException(
+          'No se pudo iniciar el pago con el proveedor seleccionado',
+        );
+      }
+    }
+
     return {
       subscription: current ? serializeSubscription(current) : null,
-      order: serializeOrder(order),
+      order: { ...serializeOrder(order), checkoutUrl },
     };
   }
 
@@ -255,45 +293,7 @@ export class SubscriptionService {
     if (order.status !== 'pending') {
       throw new BadRequestException('La orden ya fue procesada');
     }
-    const plan = await this.prisma.plan.findUnique({
-      where: { key: order.planKey },
-    });
-    if (!plan) {
-      throw new NotFoundException('Plan no encontrado');
-    }
-
-    const base = new Date();
-    const expiresAt =
-      order.period === 'yearly' ? addMonths(base, 12) : addMonths(base, 1);
-
-    await this.prisma.$transaction([
-      this.prisma.paymentOrder.update({
-        where: { id: orderId },
-        data: { status: 'paid', paidAt: new Date() },
-      }),
-      this.prisma.subscription.upsert({
-        where: { companyId: order.companyId },
-        create: {
-          companyId: order.companyId,
-          planId: plan.id,
-          status: 'active',
-          period: order.period,
-          price: order.amount,
-          startsAt: base,
-          trialEndsAt: null,
-          expiresAt,
-        },
-        update: {
-          planId: plan.id,
-          status: 'active',
-          period: order.period,
-          price: order.amount,
-          startsAt: base,
-          trialEndsAt: null,
-          expiresAt,
-        },
-      }),
-    ]);
+    await settlePaymentOrder(this.prisma, order);
     this.logger.info(
       `Pago confirmado: orden ${orderId}, empresa ${order.companyId}`,
     );

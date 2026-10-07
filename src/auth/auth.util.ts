@@ -13,6 +13,8 @@ export function buildAuthPayload(user: Users): AuthUserPayload {
     companyDocument: user.company?.document ?? null,
     companyPhoneNumber: user.company?.phoneNumber ?? null,
     companyAddress: user.company?.address ?? null,
+    companyCurrency: user.company?.currency ?? 'USD',
+    companyTaxRate: user.company?.taxRate ?? 19,
     planKey: user.subscription?.plan?.key ?? null,
     planName: user.subscription?.plan?.name ?? null,
     subscriptionStatus: user.subscription?.status ?? null,

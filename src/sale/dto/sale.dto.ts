@@ -228,6 +228,55 @@ export class UpdateSaleDto {
   items?: CreateSaleItemDto[];
 }
 
+@ApiSchema({ name: 'ListInvoices' })
+export class ListInvoicesQueryDto {
+  @ApiPropertyOptional({ description: 'Page number (1-based)', default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ description: 'Items per page', default: 10 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 10;
+
+  @ApiPropertyOptional({
+    description: 'Search by invoice number or client name',
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by invoice status',
+    enum: ['paid', 'pending', 'cancelled'],
+  })
+  @IsOptional()
+  @IsIn(['paid', 'pending', 'cancelled'])
+  status?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by start date (ISO 8601)',
+    example: '2025-01-01',
+  })
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by end date (ISO 8601)',
+    example: '2025-12-31',
+  })
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+}
+
 @ApiSchema({ name: 'UpdateInvoiceStatus' })
 export class UpdateInvoiceStatusDto {
   @ApiProperty({ description: 'Invoice Status', enum: ['paid', 'pending'] })

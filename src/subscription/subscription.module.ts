@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { MailModule } from 'src/email/mail.module';
+import { NotificationModule } from 'src/notification/notification.module';
+import { PaymentModule } from 'src/payment/payment.module';
 import { SubscriptionService } from './subscription.service';
 import { PlansController } from './plans.controller';
 import { SubscriptionController } from './subscription.controller';
@@ -9,7 +11,13 @@ import { AdminSubscriptionController } from './admin.controller';
 import { SubscriptionCronService } from './subscription-cron.service';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), PrismaModule, MailModule],
+  imports: [
+    ScheduleModule.forRoot(),
+    PrismaModule,
+    MailModule,
+    NotificationModule,
+    PaymentModule,
+  ],
   controllers: [
     PlansController,
     SubscriptionController,

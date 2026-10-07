@@ -8,29 +8,7 @@ model User {
   createdAt DateTime @default(now())
   companyId Int?
   company   Company? @relation(fields: [companyId], references: [id])
-  person    Person[]
   cashRegisters CashRegister[]
-}
-
-model Posts {
-  id          Int      @id @default(autoincrement())
-  description String
-  title       String
-  createdAt   DateTime @default(now())
-}
-
-model Person {
-  id             Int      @id @default(autoincrement())
-  name           String
-  secondName     String
-  lastName       String
-  secondLastName String
-  phoneNumber    String
-  address        String
-  userId         Int
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @default(now())
-  user           User     @relation(fields: [userId], references: [id])
 }
 
 model Company {
@@ -42,11 +20,16 @@ model Company {
   address     String?
   description String?
   active      Boolean  @default(true)
+  // Configuración de la empresa (Fase 5.5)
+  currency      String   @default("USD") // USD | VES — moneda base
+  taxRate       Int      @default(19) // % de IVA aplicado en ventas
+  invoicePrefix String   @default("FAC") // Prefijo de numeración de facturas
+  salePrefix    String   @default("VEN") // Prefijo de numeración de ventas
+  logoUrl       String? // Logo de la empresa (Cloudflare R2)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   users       User[]
   products    Product[]
-  productTypes ProductType[]
   categories  Category[]
   clients     Client[]
   suppliers   Supplier[]
@@ -59,6 +42,7 @@ model Company {
   apartadoPayments ApartadoPayment[]
   subscription   Subscription?
   paymentOrders  PaymentOrder[]
+  notifications  Notification[]
 }
 
 model Category {

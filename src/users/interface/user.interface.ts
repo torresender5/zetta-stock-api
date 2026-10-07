@@ -6,6 +6,8 @@ export interface UserCompany {
   phoneNumber: string | null;
   address: string | null;
   active: boolean;
+  currency?: string;
+  taxRate?: number;
 }
 
 export interface UserSubscriptionPlan {

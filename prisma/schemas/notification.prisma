@@ -1,0 +1,15 @@
+model Notification {
+  id        Int       @id @default(autoincrement())
+  companyId Int
+  company   Company   @relation(fields: [companyId], references: [id])
+  userId    Int? // Destinatario concreto (opcional: null = toda la empresa)
+  type      String // stock_low | apartado_due | subscription_expiring | subscription_expired | cash_open
+  title     String
+  body      String?
+  dedupeKey String? // Evita duplicados mientras la notificación siga sin leer
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([companyId, readAt])
+  @@index([companyId, dedupeKey])
+}

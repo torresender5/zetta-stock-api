@@ -1,4 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { Logger } from 'winston';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -15,6 +16,7 @@ import {
 import {
   SalesSummary,
   TopProductRow,
+  TopClientRow,
   PurchasesSummary,
   InventoryReport,
   InventoryRow,
@@ -26,6 +28,24 @@ import {
 export type ReportFormat = 'xlsx' | 'pdf';
 
 type ExportOptions = Pick<ExportTable, 'company' | 'meta' | 'charts'>;
+
+/** Forma mínima de una venta que alimenta los agregados del reportero. */
+type AggregatedSale = {
+  clientId: number;
+  date: Date;
+  subtotal: number;
+  tax: number;
+  total: number;
+  paymentMethod: string;
+  paymentStatus: string;
+  items: {
+    productId: number;
+    productName: string;
+    quantity: number;
+    subtotal: number;
+  }[];
+  client?: { name: string } | null;
+};
 
 const STATUS_LABELS: Record<string, string> = {
   paid: 'Pagado',
@@ -104,36 +124,36 @@ export class ReportService {
     return await exportToPdf(table);
   }
 
-  async salesSummary(
+  /**
+   * Ventas mínimas necesarias para los agregados (resumen, top productos y
+   * top clientes). `client` solo se incluye cuando el agregado lo necesita.
+   */
+  private async fetchSalesForReport(
     companyId: number | undefined,
     startDate?: string,
     endDate?: string,
-    format?: ReportFormat,
-    companyName?: string,
-  ): Promise<SalesSummary | Buffer | null> {
-    this.logger.info('Generating sales summary report');
-    const where = {
+    options: { excludeCancelled?: boolean; withClient?: boolean } = {},
+  ) {
+    const where: Prisma.SaleWhereInput = {
       ...(companyId ? { companyId } : {}),
       date: this.dateRange(startDate, endDate),
+      ...(options.excludeCancelled
+        ? { paymentStatus: { not: 'cancelled' } }
+        : {}),
     };
-
-    const sales = await this.prisma.sale.findMany({
+    return this.prisma.sale.findMany({
       where,
-      include: { items: true },
+      include: { items: true, ...(options.withClient ? { client: true } : {}) },
     });
+  }
 
-    const totalSales = sales
-      .filter((sale) => sale.paymentStatus !== 'cancelled')
-      .reduce((sum, sale) => sum + sale.total, 0);
-    const totalCount = sales.filter(
-      (sale) => sale.paymentStatus !== 'cancelled',
-    ).length;
-    const subtotal = sales
-      .filter((sale) => sale.paymentStatus !== 'cancelled')
-      .reduce((sum, sale) => sum + sale.subtotal, 0);
-    const tax = sales
-      .filter((sale) => sale.paymentStatus !== 'cancelled')
-      .reduce((sum, sale) => sum + sale.tax, 0);
+  /** Totales, desgloses y serie diaria de un conjunto de ventas. */
+  private summarizeSales(sales: AggregatedSale[]) {
+    const active = sales.filter((sale) => sale.paymentStatus !== 'cancelled');
+    const totalSales = active.reduce((sum, sale) => sum + sale.total, 0);
+    const totalCount = active.length;
+    const subtotal = active.reduce((sum, sale) => sum + sale.subtotal, 0);
+    const tax = active.reduce((sum, sale) => sum + sale.tax, 0);
 
     const byPaymentMethod: Record<string, number> = {};
     const byPaymentStatus: Record<string, number> = {};
@@ -168,9 +188,7 @@ export class ReportService {
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([date, value]) => ({ date, ...value }));
 
-    const report: SalesSummary = {
-      startDate: startDate ?? '',
-      endDate: endDate ?? '',
+    return {
       totalSales: this.round(totalSales),
       totalCount,
       subtotal,
@@ -179,63 +197,9 @@ export class ReportService {
       byPaymentStatus,
       byPeriod,
     };
-
-    return (
-      (await this.buildExport(
-        [
-          { header: 'Fecha', key: 'date', width: 14 },
-          { header: 'Ventas', key: 'count', width: 10 },
-          { header: 'Subtotal', key: 'subtotal', width: 16 },
-          { header: 'IVA', key: 'tax', width: 14 },
-          { header: 'Total', key: 'total', width: 16 },
-        ],
-        byPeriod.map((row) => ({ ...row })),
-        { xlsx: 'Reporte de Ventas', pdf: 'Reporte de Ventas' },
-        format,
-        {
-          company: companyName,
-          meta: [
-            {
-              label: 'Total ventas',
-              value: this.round(totalSales),
-              money: true,
-            },
-            { label: 'Nº ventas', value: totalCount },
-            { label: 'Subtotal', value: this.round(subtotal), money: true },
-            { label: 'IVA', value: this.round(tax), money: true },
-          ],
-          charts: [
-            {
-              title: 'Ingresos por Estado',
-              items: this.mapTotals(byPaymentStatus, STATUS_LABELS),
-            },
-            {
-              title: 'Ingresos por Método de Pago',
-              items: this.mapTotals(byPaymentMethod, METHOD_LABELS),
-            },
-          ],
-        },
-      )) ?? report
-    );
   }
 
-  async topProducts(
-    companyId: number | undefined,
-    startDate?: string,
-    endDate?: string,
-    format?: ReportFormat,
-    companyName?: string,
-  ): Promise<TopProductRow[] | Buffer | null> {
-    this.logger.info('Generating top products report');
-    const where = {
-      ...(companyId ? { companyId } : {}),
-      date: this.dateRange(startDate, endDate),
-    };
-    const sales = await this.prisma.sale.findMany({
-      where,
-      include: { items: true },
-    });
-
+  private aggregateTopProducts(sales: AggregatedSale[]): TopProductRow[] {
     const map = new Map<
       number,
       { productId: number; name: string; quantity: number; revenue: number }
@@ -253,8 +217,139 @@ export class ReportService {
         map.set(item.productId, current);
       }
     }
+    return [...map.values()].sort((a, b) => b.quantity - a.quantity);
+  }
 
-    const rows = [...map.values()].sort((a, b) => b.quantity - a.quantity);
+  private aggregateTopClients(sales: AggregatedSale[]): TopClientRow[] {
+    const map = new Map<
+      number,
+      {
+        clientId: number;
+        name: string;
+        purchases: number;
+        totalSpent: number;
+        itemCount: number;
+      }
+    >();
+    for (const sale of sales) {
+      const current = map.get(sale.clientId) ?? {
+        clientId: sale.clientId,
+        name: sale.client?.name ?? 'Cliente',
+        purchases: 0,
+        totalSpent: 0,
+        itemCount: 0,
+      };
+      current.purchases += 1;
+      current.totalSpent = this.round(current.totalSpent + sale.total);
+      current.itemCount += sale.items.reduce(
+        (sum, item) => sum + item.quantity,
+        0,
+      );
+      map.set(sale.clientId, current);
+    }
+    return [...map.values()].sort((a, b) => b.totalSpent - a.totalSpent);
+  }
+
+  /**
+   * Datos del dashboard en una sola consulta: resumen de ventas (con serie
+   * diaria para las gráficas), top de productos y top de clientes.
+   * Responde a `GET /dashboard/summary` (vista `dashboard`, incluida en todos
+   * los planes), evitando al front descargar todas las ventas.
+   */
+  async dashboardSummary(
+    companyId: number | undefined,
+    startDate?: string,
+    endDate?: string,
+    excludeCancelled?: boolean,
+  ): Promise<{
+    sales: SalesSummary;
+    topProducts: TopProductRow[];
+    topClients: TopClientRow[];
+  }> {
+    this.logger.info('Generating dashboard summary');
+    const sales = await this.fetchSalesForReport(
+      companyId,
+      startDate,
+      endDate,
+      { excludeCancelled, withClient: true },
+    );
+
+    return {
+      sales: {
+        startDate: startDate ?? '',
+        endDate: endDate ?? '',
+        ...this.summarizeSales(sales),
+      },
+      topProducts: this.aggregateTopProducts(sales),
+      topClients: this.aggregateTopClients(sales),
+    };
+  }
+
+  async salesSummary(
+    companyId: number | undefined,
+    startDate?: string,
+    endDate?: string,
+    format?: ReportFormat,
+    companyName?: string,
+  ): Promise<SalesSummary | Buffer | null> {
+    this.logger.info('Generating sales summary report');
+    const sales = await this.fetchSalesForReport(companyId, startDate, endDate);
+
+    const report: SalesSummary = {
+      startDate: startDate ?? '',
+      endDate: endDate ?? '',
+      ...this.summarizeSales(sales),
+    };
+
+    return (
+      (await this.buildExport(
+        [
+          { header: 'Fecha', key: 'date', width: 14 },
+          { header: 'Ventas', key: 'count', width: 10 },
+          { header: 'Subtotal', key: 'subtotal', width: 16 },
+          { header: 'IVA', key: 'tax', width: 14 },
+          { header: 'Total', key: 'total', width: 16 },
+        ],
+        report.byPeriod.map((row) => ({ ...row })),
+        { xlsx: 'Reporte de Ventas', pdf: 'Reporte de Ventas' },
+        format,
+        {
+          company: companyName,
+          meta: [
+            {
+              label: 'Total ventas',
+              value: report.totalSales,
+              money: true,
+            },
+            { label: 'Nº ventas', value: report.totalCount },
+            { label: 'Subtotal', value: report.subtotal, money: true },
+            { label: 'IVA', value: report.tax, money: true },
+          ],
+          charts: [
+            {
+              title: 'Ingresos por Estado',
+              items: this.mapTotals(report.byPaymentStatus, STATUS_LABELS),
+            },
+            {
+              title: 'Ingresos por Método de Pago',
+              items: this.mapTotals(report.byPaymentMethod, METHOD_LABELS),
+            },
+          ],
+        },
+      )) ?? report
+    );
+  }
+
+  async topProducts(
+    companyId: number | undefined,
+    startDate?: string,
+    endDate?: string,
+    format?: ReportFormat,
+    companyName?: string,
+  ): Promise<TopProductRow[] | Buffer | null> {
+    this.logger.info('Generating top products report');
+    const sales = await this.fetchSalesForReport(companyId, startDate, endDate);
+    const rows = this.aggregateTopProducts(sales);
 
     const meta: ExportMetaItem[] = [
       {

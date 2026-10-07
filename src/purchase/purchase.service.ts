@@ -9,6 +9,7 @@ import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { PurchaseQueryDto, UpdatePurchaseDto } from './dto/purchase.dto';
 import { round2 } from 'src/common/round';
+import { getCompanySettings } from 'src/company/company-settings.util';
 
 @Injectable()
 export class PurchaseService {
@@ -133,12 +134,13 @@ export class PurchaseService {
         }
       }
 
-      // Calculate totals
+      // Calculate totals (% IVA de la configuración de la empresa — Fase 5.5)
+      const { taxRate } = await getCompanySettings(this.prisma, companyId);
       const subtotal = data.items.reduce(
         (sum: number, item: any) => sum + Number(item.subtotal),
         0,
       );
-      const tax = Math.round(subtotal * 0.19);
+      const tax = Math.round(subtotal * (taxRate / 100));
       const total = subtotal + tax;
 
       // Generate sequential purchase number per company and year, retrying on
@@ -191,102 +193,105 @@ export class PurchaseService {
       fxRate ? round2(usd * fxRate) : null;
 
     // Create purchase with items in a transaction
-    const result = await this.prisma.$transaction(async (tx) => {
-      // Create the purchase
-      const purchase = await tx.purchase.create({
-        data: {
-          companyId,
-          purchaseNumber,
-          supplierId: Number(data.supplierId),
-          date: new Date(data.date),
-          subtotal,
-          tax,
-          total,
-          paymentStatus: data.paymentStatus,
-          fxRate: fxRate ?? null,
-          subtotalVes: inVES(subtotal),
-          taxVes: inVES(tax),
-          totalVes: inVES(total),
-          items: {
-            create: data.items.map((item: any) => ({
-              productId: Number(item.productId),
-              productName: item.productName,
-              size: item.size || null,
-              quantity: Number(item.quantity),
-              unitPrice: Number(item.unitPrice),
-              subtotal: Number(item.subtotal),
-              unitPriceVes: inVES(Number(item.unitPrice)),
-              subtotalVes: inVES(Number(item.subtotal)),
-            })),
-          },
-        },
-        include: {
-          items: true,
-          supplier: true,
-        },
-      });
-
-      // Update product stock and purchase price
-      for (const item of data.items) {
-        const product = await tx.product.findFirst({
-          where: {
-            id: Number(item.productId),
-            ...(companyId ? { companyId } : {}),
-          },
-        });
-        if (!product) {
-          throw new NotFoundException(
-            `Producto ${item.productId} no encontrado`,
-          );
-        }
-
-        const sizeStock = (product.sizes as any[]) ?? [];
-        let updateStock: number;
-        let updateSizes: any;
-        const updatePurchasePrice = Number(item.unitPrice);
-
-        if (Array.isArray(sizeStock) && sizeStock.length > 0) {
-          // Product with sizes: require a size per line
-          if (!item.size) {
-            throw new BadRequestException(
-              `El producto "${product.name}" requiere seleccionar una talla`,
-            );
-          }
-          const sizeIndex = sizeStock.findIndex((s) => s.size === item.size);
-          if (sizeIndex === -1) {
-            throw new BadRequestException(
-              `Talla "${item.size}" no válida para "${product.name}"`,
-            );
-          }
-          updateSizes = sizeStock.map((s, i) =>
-            i === sizeIndex
-              ? {
-                  ...s,
-                  stock: (Number(s.stock) ?? 0) + Number(item.quantity),
-                }
-              : s,
-          );
-          updateStock = updateSizes.reduce(
-            (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
-            0,
-          );
-        } else {
-          updateStock = product.stock + Number(item.quantity);
-          updateSizes = undefined;
-        }
-
-        await tx.product.update({
-          where: { id: Number(item.productId) },
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        // Create the purchase
+        const purchase = await tx.purchase.create({
           data: {
-            stock: updateStock,
-            ...(updateSizes !== undefined ? { sizes: updateSizes } : {}),
-            purchasePrice: updatePurchasePrice,
+            companyId,
+            purchaseNumber,
+            supplierId: Number(data.supplierId),
+            date: new Date(data.date),
+            subtotal,
+            tax,
+            total,
+            paymentStatus: data.paymentStatus,
+            fxRate: fxRate ?? null,
+            subtotalVes: inVES(subtotal),
+            taxVes: inVES(tax),
+            totalVes: inVES(total),
+            items: {
+              create: data.items.map((item: any) => ({
+                productId: Number(item.productId),
+                productName: item.productName,
+                size: item.size || null,
+                quantity: Number(item.quantity),
+                unitPrice: Number(item.unitPrice),
+                subtotal: Number(item.subtotal),
+                unitPriceVes: inVES(Number(item.unitPrice)),
+                subtotalVes: inVES(Number(item.subtotal)),
+              })),
+            },
+          },
+          include: {
+            items: true,
+            supplier: true,
           },
         });
-      }
 
-      return purchase;
-    }, { timeout: 15000 });
+        // Update product stock and purchase price
+        for (const item of data.items) {
+          const product = await tx.product.findFirst({
+            where: {
+              id: Number(item.productId),
+              ...(companyId ? { companyId } : {}),
+            },
+          });
+          if (!product) {
+            throw new NotFoundException(
+              `Producto ${item.productId} no encontrado`,
+            );
+          }
+
+          const sizeStock = (product.sizes as any[]) ?? [];
+          let updateStock: number;
+          let updateSizes: any;
+          const updatePurchasePrice = Number(item.unitPrice);
+
+          if (Array.isArray(sizeStock) && sizeStock.length > 0) {
+            // Product with sizes: require a size per line
+            if (!item.size) {
+              throw new BadRequestException(
+                `El producto "${product.name}" requiere seleccionar una talla`,
+              );
+            }
+            const sizeIndex = sizeStock.findIndex((s) => s.size === item.size);
+            if (sizeIndex === -1) {
+              throw new BadRequestException(
+                `Talla "${item.size}" no válida para "${product.name}"`,
+              );
+            }
+            updateSizes = sizeStock.map((s, i) =>
+              i === sizeIndex
+                ? {
+                    ...s,
+                    stock: (Number(s.stock) ?? 0) + Number(item.quantity),
+                  }
+                : s,
+            );
+            updateStock = updateSizes.reduce(
+              (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
+              0,
+            );
+          } else {
+            updateStock = product.stock + Number(item.quantity);
+            updateSizes = undefined;
+          }
+
+          await tx.product.update({
+            where: { id: Number(item.productId) },
+            data: {
+              stock: updateStock,
+              ...(updateSizes !== undefined ? { sizes: updateSizes } : {}),
+              purchasePrice: updatePurchasePrice,
+            },
+          });
+        }
+
+        return purchase;
+      },
+      { timeout: 15000 },
+    );
 
     return result;
   }
@@ -350,73 +355,78 @@ export class PurchaseService {
         throw new NotFoundException('Compra no encontrada');
       }
 
-      await this.prisma.$transaction(async (tx) => {
-        // Revertir el stock que incrementó la creación de la compra
-        for (const item of existing.items) {
-          const product = await tx.product.findFirst({
-            where: {
-              id: item.productId,
-              ...(companyId ? { companyId } : {}),
-            },
-          });
-          if (!product) {
-            throw new NotFoundException(
-              `Producto ${item.productId} no encontrado`,
-            );
-          }
-
-          const sizeStock = (product.sizes as any[]) ?? [];
-          let updateStock: number;
-          let updateSizes: any;
-
-          if (Array.isArray(sizeStock) && sizeStock.length > 0 && item.size) {
-            const sizeIndex = sizeStock.findIndex((s) => s.size === item.size);
-            if (sizeIndex === -1) {
-              throw new BadRequestException(
-                `Talla "${item.size}" no válida para "${product.name}"`,
+      await this.prisma.$transaction(
+        async (tx) => {
+          // Revertir el stock que incrementó la creación de la compra
+          for (const item of existing.items) {
+            const product = await tx.product.findFirst({
+              where: {
+                id: item.productId,
+                ...(companyId ? { companyId } : {}),
+              },
+            });
+            if (!product) {
+              throw new NotFoundException(
+                `Producto ${item.productId} no encontrado`,
               );
             }
-            updateSizes = sizeStock.map((s, i) =>
-              i === sizeIndex
-                ? {
-                    ...s,
-                    stock: Math.max(
-                      0,
-                      (Number(s.stock) ?? 0) - Number(item.quantity),
-                    ),
-                  }
-                : s,
-            );
-            updateStock = updateSizes.reduce(
-              (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
-              0,
-            );
-          } else {
-            if (Array.isArray(sizeStock) && sizeStock.length > 0) {
-              this.logger.warn(
-                `Línea de compra ${item.id} sin talla en producto con tallas "${product.name}", ` +
-                  'se ajusta solo el stock total',
+
+            const sizeStock = (product.sizes as any[]) ?? [];
+            let updateStock: number;
+            let updateSizes: any;
+
+            if (Array.isArray(sizeStock) && sizeStock.length > 0 && item.size) {
+              const sizeIndex = sizeStock.findIndex(
+                (s) => s.size === item.size,
               );
+              if (sizeIndex === -1) {
+                throw new BadRequestException(
+                  `Talla "${item.size}" no válida para "${product.name}"`,
+                );
+              }
+              updateSizes = sizeStock.map((s, i) =>
+                i === sizeIndex
+                  ? {
+                      ...s,
+                      stock: Math.max(
+                        0,
+                        (Number(s.stock) ?? 0) - Number(item.quantity),
+                      ),
+                    }
+                  : s,
+              );
+              updateStock = updateSizes.reduce(
+                (sum: number, s: any) => sum + (Number(s.stock) ?? 0),
+                0,
+              );
+            } else {
+              if (Array.isArray(sizeStock) && sizeStock.length > 0) {
+                this.logger.warn(
+                  `Línea de compra ${item.id} sin talla en producto con tallas "${product.name}", ` +
+                    'se ajusta solo el stock total',
+                );
+              }
+              updateStock = Math.max(
+                0,
+                Number(product.stock) - Number(item.quantity),
+              );
+              updateSizes = undefined;
             }
-            updateStock = Math.max(
-              0,
-              Number(product.stock) - Number(item.quantity),
-            );
-            updateSizes = undefined;
+
+            await tx.product.update({
+              where: { id: item.productId },
+              data: {
+                stock: updateStock,
+                ...(updateSizes !== undefined ? { sizes: updateSizes } : {}),
+              },
+            });
           }
 
-          await tx.product.update({
-            where: { id: item.productId },
-            data: {
-              stock: updateStock,
-              ...(updateSizes !== undefined ? { sizes: updateSizes } : {}),
-            },
-          });
-        }
-
-        await tx.purchaseItem.deleteMany({ where: { purchaseId: id } });
-        await tx.purchase.delete({ where: { id } });
-      }, { timeout: 15000 });
+          await tx.purchaseItem.deleteMany({ where: { purchaseId: id } });
+          await tx.purchase.delete({ where: { id } });
+        },
+        { timeout: 15000 },
+      );
 
       return existing;
     } catch (error) {

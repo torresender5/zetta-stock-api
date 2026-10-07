@@ -23,6 +23,7 @@ const PATH_VIEWS: ReadonlyArray<readonly [prefix: string, view: string]> = [
   ['/reports/accounts-payable', 'accountsPayable'],
   ['/reports/apartados', 'apartados'],
   ['/reports', 'reports'],
+  ['/dashboard', 'dashboard'],
   ['/products', 'products'],
   ['/categories', 'products'],
   ['/client', 'clients'],
@@ -53,6 +54,8 @@ export class SubscriptionGuard implements CanActivate {
       normalized.startsWith('/auth') ||
       normalized.startsWith('/plans') ||
       normalized.startsWith('/subscription') ||
+      normalized.startsWith('/notifications') ||
+      normalized.startsWith('/webhooks') ||
       normalized.startsWith('/users/me')
     );
   }

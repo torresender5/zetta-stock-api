@@ -14,6 +14,7 @@ import type { Request } from 'express';
 import { Auth } from 'src/auth/auth.decorator';
 import type { AuthUserPayload } from 'src/auth/auth-user.interface';
 import { SubscriptionService } from './subscription.service';
+import { PaymentService } from 'src/payment/payment.service';
 import { PurchaseSubscriptionDto } from './dto/purchase.dto';
 
 @ApiTags('Suscripción')
@@ -21,6 +22,7 @@ import { PurchaseSubscriptionDto } from './dto/purchase.dto';
 export class SubscriptionController {
   constructor(
     private readonly subscriptionService: SubscriptionService,
+    private readonly paymentService: PaymentService,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
   ) {}
 
@@ -53,5 +55,15 @@ export class SubscriptionController {
     }
     this.logger.info('Iniciando compra de suscripción');
     return this.subscriptionService.purchase(req.user.companyId, dto);
+  }
+
+  @Auth()
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Métodos de pago disponibles según la configuración del servidor',
+  })
+  @Get('payment-methods')
+  paymentMethods() {
+    return this.paymentService.availability();
   }
 }

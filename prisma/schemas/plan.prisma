@@ -5,8 +5,8 @@ model Plan {
   description  String?
   features     Json? // Lista de beneficios mostrados en el catálogo
   allowedViews Json? // Lista de vistas (ViewKey) permitidas por este plan
-  priceMonthly Int      @default(0) // COP
-  priceYearly  Int      @default(0) // COP
+  priceMonthly Int      @default(0) // USD
+  priceYearly  Int      @default(0) // USD
   maxUsers     Int      @default(1) // Limite de usuarios por empresa
   trialDays    Int? // Solo para el plan free (dias de prueba)
   sortOrder    Int      @default(0)
@@ -24,7 +24,7 @@ model Subscription {
   plan        Plan      @relation(fields: [planId], references: [id])
   status      String    @default("active") // active | expired
   period      String    @default("trial") // trial | monthly | yearly
-  price       Int       @default(0) // Precio cobrado (snapshot COP)
+  price       Int       @default(0) // Precio cobrado (snapshot USD)
   startsAt    DateTime  @default(now())
   trialEndsAt DateTime?
   expiresAt   DateTime?
@@ -33,15 +33,22 @@ model Subscription {
 }
 
 model PaymentOrder {
-  id        Int       @id @default(autoincrement())
-  companyId Int
-  company   Company   @relation(fields: [companyId], references: [id])
-  planKey   String
-  period    String // monthly | yearly
-  amount    Int // COP
-  concept   String
-  status    String    @default("pending") // pending | paid | rejected
-  paidAt    DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id         Int       @id @default(autoincrement())
+  companyId  Int
+  company    Company   @relation(fields: [companyId], references: [id])
+  planKey    String
+  period     String // monthly | yearly
+  amount     Int // USD
+  concept    String
+  status     String    @default("pending") // pending | paid | rejected
+  provider   String    @default("manual") // manual | stripe | pabilo
+  currency   String    @default("USD") // Moneda del cobro (USD en ambos proveedores)
+  checkoutUrl String? // URL de pago devuelta por el proveedor
+  providerRef String? // stripe session id o pabilo payment_link id
+  expiresAt  DateTime? // Vencimiento del link de pago del proveedor
+  paidAt     DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([providerRef])
 }

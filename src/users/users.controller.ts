@@ -10,7 +10,12 @@ import {
   Inject,
   Param,
   Req,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage, type FileFilterCallback } from 'multer';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from './users.service';
 import { Auth } from '../auth/auth.decorator';
@@ -19,14 +24,33 @@ import { UserCreateDto, UpdateUserDto } from './dto/user.dto';
 import { UpdateProfileDto, UpdateCompanyDto } from './dto/profile.dto';
 import { AuthUserPayload } from '../auth/auth-user.interface';
 import { buildAuthPayload } from '../auth/auth.util';
+import { R2Service } from '../r2/r2.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
+
+const logoFileFilter = (
+  _req: Express.Request,
+  file: Express.Multer.File,
+  cb: FileFilterCallback,
+) => {
+  const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!allowedMimes.includes(file.mimetype)) {
+    cb(
+      new BadRequestException(
+        'Tipo de archivo no permitido. Use JPG, PNG, WebP o GIF',
+      ),
+    );
+  } else {
+    cb(null, true);
+  }
+};
 
 @Controller('users')
 export class UsersController {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
+    private r2Service: R2Service,
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
   ) {}
 
@@ -113,6 +137,49 @@ export class UsersController {
     return {
       access_token: await this.jwtService.signAsync(buildAuthPayload(user)),
     };
+  }
+
+  @AuthRoles('admin')
+  @Get('me/company')
+  getMyCompany(@Req() req: Request & { user: AuthUserPayload }) {
+    this.logger.info('Starting UsersController get own company settings');
+    return this.usersService.getMyCompany(req.user?.companyId);
+  }
+
+  @AuthRoles('admin')
+  @HttpCode(HttpStatus.OK)
+  @Patch('me/company/logo')
+  @UseInterceptors(
+    FileInterceptor('image', {
+      storage: memoryStorage(),
+      fileFilter: logoFileFilter,
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  uploadCompanyLogo(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request & { user: AuthUserPayload },
+  ) {
+    this.logger.info('Starting UsersController upload company logo');
+    if (!file) {
+      throw new BadRequestException('No se ha proporcionado un archivo');
+    }
+    return this.usersService.uploadCompanyLogo(
+      req.user?.companyId,
+      file,
+      this.r2Service,
+    );
+  }
+
+  @AuthRoles('admin')
+  @HttpCode(HttpStatus.OK)
+  @Delete('me/company/logo')
+  removeCompanyLogo(@Req() req: Request & { user: AuthUserPayload }) {
+    this.logger.info('Starting UsersController remove company logo');
+    return this.usersService.removeCompanyLogo(
+      req.user?.companyId,
+      this.r2Service,
+    );
   }
 
   @AuthRoles('admin')

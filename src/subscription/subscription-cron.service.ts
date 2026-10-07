@@ -4,6 +4,7 @@ import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { MailService } from 'src/email/mail.service';
+import { NotificationService } from 'src/notification/notification.service';
 import { TRIAL_END_WARNING_DAYS } from './subscription.constant';
 
 @Injectable()
@@ -12,6 +13,7 @@ export class SubscriptionCronService {
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
     private prisma: PrismaService,
     private mailService: MailService,
+    private notifications: NotificationService,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_9AM, { name: 'handleExpirations' })
@@ -34,6 +36,14 @@ export class SubscriptionCronService {
       await this.prisma.subscription.update({
         where: { id: sub.id },
         data: { status: 'expired' },
+      });
+      // Notificación in-app (Fase 5.3)
+      await this.notifications.notify({
+        companyId: sub.companyId,
+        type: 'subscription_expired',
+        title: 'Tu suscripción ha vencido',
+        body: `El plan ${sub.plan.name} venció. Renueva para seguir facturando sin interrupciones.`,
+        dedupeKey: `subscription_expired:${sub.companyId}`,
       });
       for (const admin of sub.company.users) {
         try {
@@ -91,6 +101,14 @@ export class SubscriptionCronService {
     for (const sub of subs) {
       const effectiveEnd = sub.trialEndsAt ?? sub.expiresAt;
       if (!effectiveEnd) continue;
+      // Notificación in-app (Fase 5.3)
+      await this.notifications.notify({
+        companyId: sub.companyId,
+        type: 'subscription_expiring',
+        title: `Tu plan ${message}`,
+        body: `El plan ${sub.plan.name} ${message} (${effectiveEnd.toLocaleDateString('es-CO')}).`,
+        dedupeKey: `subscription_expiring:${sub.id}:${message}`,
+      });
       for (const admin of sub.company.users) {
         try {
           await this.mailService.sendEmail(

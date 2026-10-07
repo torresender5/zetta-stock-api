@@ -1,5 +1,6 @@
 import { ApiPropertyOptional, ApiSchema } from '@nestjs/swagger';
-import { IsISO8601, IsOptional, IsIn } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsISO8601, IsOptional, IsIn } from 'class-validator';
 
 @ApiSchema({ name: 'ReportQuery' })
 export class ReportQueryDto {
@@ -26,6 +27,20 @@ export class ReportQueryDto {
   @IsOptional()
   @IsIn(['xlsx', 'pdf'])
   export?: 'xlsx' | 'pdf';
+
+  @ApiPropertyOptional({
+    description:
+      'Excluir ventas canceladas de los agregados (solo /dashboard/summary)',
+    required: false,
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === undefined || value === null || value === ''
+      ? undefined
+      : value === true || value === 'true' || value === '1',
+  )
+  @IsBoolean()
+  excludeCancelled?: boolean;
 }
 
 @ApiSchema({ name: 'PaymentsReportQuery' })

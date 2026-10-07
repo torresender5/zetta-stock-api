@@ -25,6 +25,14 @@ export interface TopProductRow {
   revenue: number;
 }
 
+export interface TopClientRow {
+  clientId: number;
+  name: string;
+  purchases: number;
+  totalSpent: number;
+  itemCount: number;
+}
+
 export interface PurchaseBySupplierRow {
   supplierId: number;
   supplier: string;

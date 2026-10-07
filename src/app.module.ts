@@ -17,8 +17,10 @@ import { PurchaseModule } from './purchase/purchase.module';
 import { CashRegisterModule } from './cash-register/cash-register.module';
 import { ApartadoModule } from './apartado/apartado.module';
 import { ReportModule } from './report/report.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { AdminModule } from './admin/admin.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -34,8 +36,10 @@ import { AdminModule } from './admin/admin.module';
     CashRegisterModule,
     ApartadoModule,
     ReportModule,
+    DashboardModule,
     SubscriptionModule,
     AdminModule,
+    NotificationModule,
   ],
   controllers: [],
   providers: [

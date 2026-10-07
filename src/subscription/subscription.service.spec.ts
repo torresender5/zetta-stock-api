@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { SubscriptionService } from './subscription.service';
+import { PaymentService } from 'src/payment/payment.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 
@@ -30,12 +31,22 @@ describe('SubscriptionService', () => {
     $transaction: jest.fn(),
   };
 
+  const paymentService = {
+    availability: jest.fn(),
+    createCheckout: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
+    paymentService.availability.mockReturnValue({ stripe: true, pabilo: true });
+    paymentService.createCheckout.mockResolvedValue({
+      checkoutUrl: 'https://checkout.example/pay',
+    });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SubscriptionService,
         { provide: PrismaService, useValue: prisma },
+        { provide: PaymentService, useValue: paymentService },
         {
           provide: WINSTON_MODULE_PROVIDER,
           useValue: { info: jest.fn(), error: jest.fn(), warn: jest.fn() },
@@ -110,6 +121,111 @@ describe('SubscriptionService', () => {
       expect(prisma.paymentOrder.create).toHaveBeenCalled();
       expect(result.order?.status).toBe('pending');
       expect(result.order?.amount).toBe(35000);
+    });
+
+    it('inicia el checkout de Stripe cuando el proveedor es stripe', async () => {
+      prisma.plan.findUnique.mockResolvedValue(basicoPlan);
+      prisma.subscription.findUnique.mockResolvedValue(null);
+      prisma.paymentOrder.create.mockResolvedValue({
+        id: 101,
+        companyId: 10,
+        planKey: 'basico',
+        period: 'monthly',
+        amount: 35000,
+        concept: 'Suscripción Básico mensual',
+        status: 'pending',
+        provider: 'stripe',
+        currency: 'USD',
+        checkoutUrl: null,
+        paidAt: null,
+        createdAt: new Date(),
+      });
+
+      const result = await service.purchase(10, {
+        planId: 2,
+        period: 'monthly',
+        provider: 'stripe',
+      });
+
+      expect(paymentService.createCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 101 }),
+        'stripe',
+      );
+      expect(result.order?.provider).toBe('stripe');
+      expect(result.order?.checkoutUrl).toBe('https://checkout.example/pay');
+    });
+
+    it('lanza error si el proveedor no está disponible en el servidor', async () => {
+      prisma.plan.findUnique.mockResolvedValue(basicoPlan);
+      prisma.subscription.findUnique.mockResolvedValue(null);
+      paymentService.availability.mockReturnValue({
+        stripe: false,
+        pabilo: false,
+      });
+
+      await expect(
+        service.purchase(10, {
+          planId: 2,
+          period: 'monthly',
+          provider: 'pabilo',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.paymentOrder.create).not.toHaveBeenCalled();
+    });
+
+    it('lanza error si el checkout del proveedor falla', async () => {
+      prisma.plan.findUnique.mockResolvedValue(basicoPlan);
+      prisma.subscription.findUnique.mockResolvedValue(null);
+      prisma.paymentOrder.create.mockResolvedValue({
+        id: 102,
+        companyId: 10,
+        planKey: 'basico',
+        period: 'monthly',
+        amount: 35000,
+        concept: 'Suscripción Básico mensual',
+        status: 'pending',
+        provider: 'stripe',
+        currency: 'USD',
+        checkoutUrl: null,
+        paidAt: null,
+        createdAt: new Date(),
+      });
+      paymentService.createCheckout.mockRejectedValue(new Error('sin clave'));
+
+      await expect(
+        service.purchase(10, {
+          planId: 2,
+          period: 'monthly',
+          provider: 'stripe',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('genera solo la orden (manual) cuando no se envía proveedor', async () => {
+      prisma.plan.findUnique.mockResolvedValue(basicoPlan);
+      prisma.subscription.findUnique.mockResolvedValue(null);
+      prisma.paymentOrder.create.mockResolvedValue({
+        id: 103,
+        companyId: 10,
+        planKey: 'basico',
+        period: 'monthly',
+        amount: 35000,
+        concept: 'Suscripción Básico mensual',
+        status: 'pending',
+        provider: 'manual',
+        currency: 'USD',
+        checkoutUrl: null,
+        paidAt: null,
+        createdAt: new Date(),
+      });
+
+      const result = await service.purchase(10, {
+        planId: 2,
+        period: 'monthly',
+      });
+
+      expect(paymentService.createCheckout).not.toHaveBeenCalled();
+      expect(result.order?.checkoutUrl).toBeNull();
     });
 
     it('lanza error si el plan no existe', async () => {

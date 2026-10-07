@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { Users, SafeUser } from './interface/user.interface';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { R2Service } from 'src/r2/r2.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { UserRole } from './dto/user.dto';
@@ -353,6 +354,10 @@ export class UsersService {
       document?: string;
       phoneNumber?: string;
       address?: string;
+      currency?: 'USD' | 'VES';
+      taxRate?: number;
+      invoicePrefix?: string;
+      salePrefix?: string;
     },
     companyId?: number,
   ): Promise<Users> {
@@ -369,6 +374,14 @@ export class UsersService {
           ? { phoneNumber: data.phoneNumber }
           : {}),
         ...(data.address !== undefined ? { address: data.address } : {}),
+        ...(data.currency !== undefined ? { currency: data.currency } : {}),
+        ...(data.taxRate !== undefined ? { taxRate: data.taxRate } : {}),
+        ...(data.invoicePrefix !== undefined
+          ? { invoicePrefix: data.invoicePrefix }
+          : {}),
+        ...(data.salePrefix !== undefined
+          ? { salePrefix: data.salePrefix }
+          : {}),
       },
     });
     const updated = await this.findByIdWithCompany(userId, companyId);
@@ -376,5 +389,85 @@ export class UsersService {
       throw new NotFoundException('Usuario no encontrado');
     }
     return updated;
+  }
+
+  /** Configuración de la empresa del usuario (Fase 5.5). */
+  async getMyCompany(companyId?: number) {
+    if (!companyId) {
+      throw new NotFoundException('No se encontró la empresa del usuario');
+    }
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        document: true,
+        phoneNumber: true,
+        address: true,
+        description: true,
+        currency: true,
+        taxRate: true,
+        invoicePrefix: true,
+        salePrefix: true,
+        logoUrl: true,
+      },
+    });
+    if (!company) {
+      throw new NotFoundException('No se encontró la empresa del usuario');
+    }
+    return company;
+  }
+
+  /** Sube el logo de la empresa a R2 y guarda su URL pública. */
+  async uploadCompanyLogo(
+    companyId: number | undefined,
+    file: Express.Multer.File,
+    r2: R2Service,
+  ): Promise<{ logoUrl: string }> {
+    if (!companyId) {
+      throw new NotFoundException('No se encontró la empresa del usuario');
+    }
+    const current = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { logoUrl: true },
+    });
+    if (!current) {
+      throw new NotFoundException('No se encontró la empresa del usuario');
+    }
+    const logoUrl = await r2.uploadFile('company', file);
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: { logoUrl },
+    });
+    if (current.logoUrl) {
+      await r2.deleteFile(current.logoUrl);
+    }
+    return { logoUrl };
+  }
+
+  /** Elimina el logo de la empresa. */
+  async removeCompanyLogo(
+    companyId: number | undefined,
+    r2: R2Service,
+  ): Promise<{ logoUrl: null }> {
+    if (!companyId) {
+      throw new NotFoundException('No se encontró la empresa del usuario');
+    }
+    const current = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { logoUrl: true },
+    });
+    if (!current) {
+      throw new NotFoundException('No se encontró la empresa del usuario');
+    }
+    await this.prisma.company.update({
+      where: { id: companyId },
+      data: { logoUrl: null },
+    });
+    if (current.logoUrl) {
+      await r2.deleteFile(current.logoUrl);
+    }
+    return { logoUrl: null };
   }
 }

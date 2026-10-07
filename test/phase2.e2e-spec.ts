@@ -144,7 +144,9 @@ describe('Fase 2 — CRUD (compras, categorías, ventas)', () => {
           where: { saleId: { in: saleIds } },
         });
         await prisma.invoice.deleteMany({ where: { saleId: { in: saleIds } } });
-        await prisma.saleItem.deleteMany({ where: { saleId: { in: saleIds } } });
+        await prisma.saleItem.deleteMany({
+          where: { saleId: { in: saleIds } },
+        });
         await prisma.sale.deleteMany({ where: { id: { in: saleIds } } });
       }
       if (registerId) {
@@ -186,7 +188,10 @@ describe('Fase 2 — CRUD (compras, categorías, ventas)', () => {
       .get(`/products/${id}`)
       .set(auth())
       .expect(200);
-    return res.body as { stock: number; sizes?: { size: string; stock: number }[] };
+    return res.body as {
+      stock: number;
+      sizes?: { size: string; stock: number }[];
+    };
   };
 
   describe('2.1 Compras: editar metadatos y eliminar con reversión de stock', () => {

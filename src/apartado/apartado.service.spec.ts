@@ -53,6 +53,7 @@ describe('ApartadoService', () => {
     product: { findFirst: jest.fn(), update: jest.fn() },
     client: { findFirst: jest.fn() },
     cashRegister: { findFirst: jest.fn() },
+    company: { findUnique: jest.fn() },
     cashMovement: { create: jest.fn() },
     sale: { count: jest.fn(), create: jest.fn() },
     invoice: { create: jest.fn() },

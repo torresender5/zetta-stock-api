@@ -25,6 +25,7 @@ export const PLAN_DEFAULT_VIEWS: Record<string, string[]> = {
     'accountsReceivable',
     'profile',
     'suscripcion',
+    'settings',
   ],
   basico: [
     'dashboard',
@@ -41,6 +42,7 @@ export const PLAN_DEFAULT_VIEWS: Record<string, string[]> = {
     'users',
     'profile',
     'suscripcion',
+    'settings',
   ],
   pro: [
     'dashboard',
@@ -58,5 +60,6 @@ export const PLAN_DEFAULT_VIEWS: Record<string, string[]> = {
     'users',
     'profile',
     'suscripcion',
+    'settings',
   ],
 };

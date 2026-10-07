@@ -15,6 +15,7 @@ model Product {
   purchasePrice Float
   salePrice     Float
   stock         Int
+  minStock      Int            @default(0) // Stock mínimo: <= stock && > 0 genera alertas de stock bajo
   sku           String
   type          String
   category      String
@@ -27,15 +28,4 @@ model Product {
   saleItems     SaleItem[]
   purchaseItems PurchaseItem[]
   apartadoItems ApartadoItem[]
-}
-
-model ProductType {
-  id          Int      @id @default(autoincrement())
-  companyId   Int?
-  company     Company? @relation(fields: [companyId], references: [id])
-  name        String
-  name2       String
-  description String?
-  code        String
-  createdAt   DateTime @default(now())
 }

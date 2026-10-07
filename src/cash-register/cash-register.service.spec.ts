@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { CashRegisterService } from './cash-register.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationService } from 'src/notification/notification.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 
 describe('CashRegisterService', () => {
@@ -35,6 +36,10 @@ describe('CashRegisterService', () => {
       providers: [
         CashRegisterService,
         { provide: PrismaService, useValue: prisma },
+        {
+          provide: NotificationService,
+          useValue: { notify: jest.fn(), clearUnreadByType: jest.fn() },
+        },
         {
           provide: WINSTON_MODULE_PROVIDER,
           useValue: {

@@ -51,6 +51,15 @@ export class ProductCreateDto {
   @Type(() => Number)
   stock: number;
 
+  @ApiPropertyOptional({
+    description: 'Stock mínimo para alertas de stock bajo (0 = sin alerta)',
+    default: 0,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  minStock?: number;
+
   @ApiProperty({ description: 'Product SKU' })
   @IsString()
   sku: string;

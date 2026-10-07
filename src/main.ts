@@ -10,6 +10,9 @@ import { winstonConfig } from './config/winston.config';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: WinstonModule.createLogger(winstonConfig),
+    // Adjunta el body crudo (req.rawBody) para verificar firmas de webhooks
+    // (Stripe y Pabilo). Ver src/payment/payment-webhook.controller.ts.
+    rawBody: true,
   });
   app.useGlobalPipes(
     new ValidationPipe({
