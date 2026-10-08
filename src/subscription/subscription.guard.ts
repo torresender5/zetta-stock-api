@@ -56,6 +56,10 @@ export class SubscriptionGuard implements CanActivate {
       normalized.startsWith('/subscription') ||
       normalized.startsWith('/notifications') ||
       normalized.startsWith('/webhooks') ||
+      // Derechos ARCO: siempre ejercibles, con plan vencido o sin módulo 'users'.
+      normalized.startsWith('/data-subject-request') ||
+      // Soporte: siempre accesible (reportar fallas o pagar con plan vencido).
+      normalized.startsWith('/tickets') ||
       normalized.startsWith('/users/me')
     );
   }

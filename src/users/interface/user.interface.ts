@@ -33,6 +33,10 @@ export interface Users {
   companyId: number | null;
   company?: UserCompany | null;
   subscription?: UserSubscription | null;
+  /** Aceptó los documentos legales (Ley OPDP 1733). Ausente en usuarios antiguos. */
+  acceptedTerms?: boolean;
+  termsVersion?: string | null;
+  acceptedAt?: Date | null;
   // createdAt DateTime @default(now())
 }
 
@@ -48,4 +52,10 @@ export interface SafeUser {
   role: string;
   companyId: number | null;
   createdAt: Date;
+}
+
+/** Datos de la petición que prueban el consentimiento legal (Ley OPDP 1733). */
+export interface ConsentMeta {
+  ip?: string | null;
+  userAgent?: string | null;
 }

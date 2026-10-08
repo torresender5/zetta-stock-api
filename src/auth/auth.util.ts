@@ -19,5 +19,8 @@ export function buildAuthPayload(user: Users): AuthUserPayload {
     planName: user.subscription?.plan?.name ?? null,
     subscriptionStatus: user.subscription?.status ?? null,
     subscriptionExpiresAt: user.subscription?.expiresAt?.toISOString() ?? null,
+    // Fase 1 (PLAN_LEGAL.md): sin aceptación registrada, el cliente debe
+    // mostrar el modal de aceptación legal antes de usar la aplicación.
+    requiresLegalAcceptance: user.acceptedTerms !== true,
   };
 }

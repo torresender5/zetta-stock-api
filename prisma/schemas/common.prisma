@@ -9,6 +9,45 @@ model User {
   companyId Int?
   company   Company? @relation(fields: [companyId], references: [id])
   cashRegisters CashRegister[]
+  // Consentimiento legal (Ley OPDP 1733) — Fase 1 del PLAN_LEGAL.md
+  acceptedTerms Boolean     @default(false)
+  termsVersion  String?
+  acceptedAt    DateTime?
+  consentLogs   ConsentLog[]
+  dataSubjectRequests DataSubjectRequest[]
+}
+
+// Prueba de aceptación de cada documento legal (Términos, Privacidad, etc.).
+model ConsentLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       String   // terms | privacy | subscription | marketing
+  version    String
+  acceptedAt DateTime @default(now())
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Solicitud de derechos ARCO del titular de datos (Ley OPDP 1733) — Fase 3 del PLAN_LEGAL.md.
+model DataSubjectRequest {
+  id         Int       @id @default(autoincrement())
+  userId     Int
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       String // acceso | rectificacion | supresion | revocacion
+  motivo     String
+  status     String    @default("pendiente") // pendiente | completada | rechazada
+  detail     String?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  dueAt      DateTime // SLA: 15 días hábiles (Política de Privacidad, sección 8)
+  resolvedAt DateTime?
+
+  @@index([userId])
 }
 
 model Company {
@@ -43,6 +82,7 @@ model Company {
   subscription   Subscription?
   paymentOrders  PaymentOrder[]
   notifications  Notification[]
+  tickets        Ticket[]
 }
 
 model Category {

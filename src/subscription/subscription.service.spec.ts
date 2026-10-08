@@ -28,6 +28,9 @@ describe('SubscriptionService', () => {
       create: jest.fn(),
       update: jest.fn(),
     },
+    consentLog: {
+      create: jest.fn(),
+    },
     $transaction: jest.fn(),
   };
 
@@ -113,14 +116,40 @@ describe('SubscriptionService', () => {
         status: 'pending',
       });
 
-      const result = await service.purchase(10, {
-        planId: 2,
-        period: 'monthly',
-      });
+      const result = await service.purchase(
+        10,
+        {
+          planId: 2,
+          period: 'monthly',
+          acceptedTerms: true,
+        },
+        { userId: 7, ip: '200.10.10.10', userAgent: 'jest-agent' },
+      );
 
       expect(prisma.paymentOrder.create).toHaveBeenCalled();
+      expect(prisma.consentLog.create).toHaveBeenCalledTimes(1);
+      const [consentArg] = prisma.consentLog.create.mock.calls[0] as [
+        { data: Record<string, unknown> },
+      ];
+      expect(consentArg.data).toMatchObject({
+        userId: 7,
+        type: 'subscription',
+        ip: '200.10.10.10',
+        userAgent: 'jest-agent',
+      });
       expect(result.order?.status).toBe('pending');
       expect(result.order?.amount).toBe(35000);
+    });
+
+    it('rechaza un plan de pago sin aceptar los términos → 400 sin orden', async () => {
+      prisma.plan.findUnique.mockResolvedValue(basicoPlan);
+      prisma.subscription.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.purchase(10, { planId: 2, period: 'monthly' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.paymentOrder.create).not.toHaveBeenCalled();
+      expect(prisma.consentLog.create).not.toHaveBeenCalled();
     });
 
     it('inicia el checkout de Stripe cuando el proveedor es stripe', async () => {
@@ -145,6 +174,7 @@ describe('SubscriptionService', () => {
         planId: 2,
         period: 'monthly',
         provider: 'stripe',
+        acceptedTerms: true,
       });
 
       expect(paymentService.createCheckout).toHaveBeenCalledWith(
@@ -168,6 +198,7 @@ describe('SubscriptionService', () => {
           planId: 2,
           period: 'monthly',
           provider: 'pabilo',
+          acceptedTerms: true,
         }),
       ).rejects.toThrow(BadRequestException);
       expect(prisma.paymentOrder.create).not.toHaveBeenCalled();
@@ -197,6 +228,7 @@ describe('SubscriptionService', () => {
           planId: 2,
           period: 'monthly',
           provider: 'stripe',
+          acceptedTerms: true,
         }),
       ).rejects.toThrow(BadRequestException);
     });
@@ -222,6 +254,7 @@ describe('SubscriptionService', () => {
       const result = await service.purchase(10, {
         planId: 2,
         period: 'monthly',
+        acceptedTerms: true,
       });
 
       expect(paymentService.createCheckout).not.toHaveBeenCalled();

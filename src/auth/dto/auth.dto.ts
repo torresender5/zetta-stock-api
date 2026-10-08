@@ -1,5 +1,11 @@
 import { ApiProperty, ApiSchema } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEmail, IsIn } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEmail,
+  IsIn,
+  IsBoolean,
+} from 'class-validator';
 
 @ApiSchema({ name: 'Login' })
 export class CreateLoginDto {
@@ -12,8 +18,35 @@ export class CreateLoginDto {
   password: string;
 }
 
+/**
+ * Aceptación de los documentos legales (Ley OPDP 1733). Los tres flags son
+ * obligatorios: sin ellos no hay prueba de consentimiento ni de mayoría de edad.
+ */
+export class ConsentFlagsDto {
+  @ApiProperty({
+    description: 'Acepta los Términos y Condiciones',
+    required: true,
+  })
+  @IsBoolean()
+  acceptTerms: boolean;
+
+  @ApiProperty({
+    description: 'Acepta la Política de Aviso de Privacidad',
+    required: true,
+  })
+  @IsBoolean()
+  acceptPrivacy: boolean;
+
+  @ApiProperty({
+    description: 'Declara tener 18 años o más',
+    required: true,
+  })
+  @IsBoolean()
+  over18: boolean;
+}
+
 @ApiSchema({ name: 'Register' })
-export class RegisterDto {
+export class RegisterDto extends ConsentFlagsDto {
   @ApiProperty({ description: 'Email' })
   @IsEmail()
   email: string;
@@ -53,3 +86,6 @@ export class RegisterDto {
   @IsString()
   address?: string;
 }
+
+@ApiSchema({ name: 'AcceptLegal' })
+export class AcceptLegalDto extends ConsentFlagsDto {}

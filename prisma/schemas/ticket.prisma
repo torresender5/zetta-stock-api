@@ -1,0 +1,32 @@
+// Ticket de soporte: lo crea el rol admin de la empresa y lo atiende el
+// superadmin (UserAdmin). Traza completa de mensajes hasta su cierre.
+model Ticket {
+  id            Int      @id @default(autoincrement())
+  companyId     Int
+  company       Company  @relation(fields: [companyId], references: [id])
+  subject       String
+  category      String // consulta | pago | falla | otro
+  status        String   @default("abierto") // abierto | pendiente | en_proceso | finalizado
+  image         String? // Captura adjunta (Cloudflare R2)
+  companyReadAt DateTime? // Última vez que la empresa abrió el hilo
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  messages      TicketMessage[]
+
+  @@index([companyId, status])
+}
+
+// Mensaje del hilo del ticket. authorKind distingue quién escribe porque los
+// ids de User y UserAdmin comparten rango y no son comparables entre sí.
+model TicketMessage {
+  id         Int    @id @default(autoincrement())
+  ticketId   Int
+  ticket     Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorKind String // empresa | soporte
+  authorId   Int? // User.id (empresa) o UserAdmin.id (soporte)
+  authorName String
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@index([ticketId])
+}

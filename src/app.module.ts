@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { AnyAuthGuard } from './auth/any-auth.guard';
+import { envPositiveInt, isRateLimitedRoute } from './auth/auth.throttle';
 import { SubscriptionGuard } from './subscription/subscription.guard';
 import { PrismaService } from './prisma/prisma.service';
 import { WinstonModule } from 'nest-winston';
@@ -21,9 +23,24 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { SubscriptionModule } from './subscription/subscription.module';
 import { AdminModule } from './admin/admin.module';
 import { NotificationModule } from './notification/notification.module';
+import { DataSubjectModule } from './data-subject/data-subject.module';
+import { TicketModule } from './ticket/ticket.module';
 
 @Module({
   imports: [
+    // Rate limit de /auth/login y /auth/register (los dos endpoints públicos
+    // donde aplica la fuerza bruta). El resto de rutas lo saltan vía skipIf.
+    ThrottlerModule.forRoot({
+      throttlers: [
+        {
+          limit: () => envPositiveInt('AUTH_RATE_LIMIT', 10),
+          ttl: () => envPositiveInt('AUTH_RATE_TTL_MS', 60_000),
+          skipIf: (context) => !isRateLimitedRoute(context),
+        },
+      ],
+      errorMessage:
+        'Demasiados intentos. Espera un minuto y vuelve a intentarlo.',
+    }),
     UsersModule,
     AuthModule,
     WinstonModule.forRoot(winstonConfig),
@@ -40,12 +57,16 @@ import { NotificationModule } from './notification/notification.module';
     SubscriptionModule,
     AdminModule,
     NotificationModule,
+    DataSubjectModule,
+    TicketModule,
   ],
   controllers: [],
   providers: [
     PrismaService,
-    // El orden importa: primero autenticación (puebla request.user),
-    // después la suscripción (bloquea planes vencidos / vistas no incluidas).
+    // El orden importa: primero el límite de tasa (niega antes de gastar CPU
+    // en autenticar), luego autenticación (puebla request.user) y por último
+    // la suscripción (bloquea planes vencidos / vistas no incluidas).
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AnyAuthGuard },
     { provide: APP_GUARD, useClass: SubscriptionGuard },
   ],

@@ -146,6 +146,14 @@ export class PaymentService {
       ],
       success_url: `${this.appBaseUrl}/suscripcion?payment=success&orderId=${order.id}`,
       cancel_url: `${this.appBaseUrl}/suscripcion?payment=cancelled`,
+      // Divulgación legal junto al botón de confirmación (Fase 2 PLAN_LEGAL.md).
+      custom_text: {
+        submit: {
+          message:
+            'Cargo único: no hay renovación automática. Al confirmar aceptas los Términos y Condiciones ' +
+            `(${this.appBaseUrl}/terminos) y la Política de Reembolsos (${this.appBaseUrl}/reembolsos).`,
+        },
+      },
       metadata: { orderId: String(order.id) },
       client_reference_id: String(order.id),
     });

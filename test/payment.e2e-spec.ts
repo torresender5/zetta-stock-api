@@ -11,6 +11,7 @@ describe('Pasarela de pagos (Fase 5.1, e2e)', () => {
   let prisma: PrismaService;
   let token: string;
   let companyId: number;
+  let userId: number;
   const ts = Date.now();
   const email = `fase51-${ts}@test.local`;
 
@@ -44,6 +45,9 @@ describe('Pasarela de pagos (Fase 5.1, e2e)', () => {
         email,
         password: 'test1234',
         accountType: 'PERSONA',
+        acceptTerms: true,
+        acceptPrivacy: true,
+        over18: true,
       })
       .expect(200);
     const login = await request(app.getHttpServer())
@@ -53,6 +57,7 @@ describe('Pasarela de pagos (Fase 5.1, e2e)', () => {
     token = (login.body as { access_token: string }).access_token;
     const user = await prisma.user.findUnique({ where: { email } });
     companyId = user!.companyId!;
+    userId = user!.id;
   }, 60000);
 
   afterAll(async () => {
@@ -80,7 +85,26 @@ describe('Pasarela de pagos (Fase 5.1, e2e)', () => {
     await request(app.getHttpServer())
       .post('/subscription/purchase')
       .set('Authorization', `Bearer ${token}`)
-      .send({ planId: plan!.id, period: 'monthly', provider: 'pabilo' })
+      .send({
+        planId: plan!.id,
+        period: 'monthly',
+        provider: 'pabilo',
+        acceptedTerms: true,
+      })
+      .expect(400);
+
+    const after = await prisma.paymentOrder.count({ where: { companyId } });
+    expect(after).toBe(before);
+  });
+
+  it('POST /subscription/purchase de pago sin aceptar términos → 400 sin orden', async () => {
+    const plan = await prisma.plan.findUnique({ where: { key: 'basico' } });
+    const before = await prisma.paymentOrder.count({ where: { companyId } });
+
+    await request(app.getHttpServer())
+      .post('/subscription/purchase')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ planId: plan!.id, period: 'monthly' })
       .expect(400);
 
     const after = await prisma.paymentOrder.count({ where: { companyId } });
@@ -93,7 +117,7 @@ describe('Pasarela de pagos (Fase 5.1, e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/subscription/purchase')
       .set('Authorization', `Bearer ${token}`)
-      .send({ planId: plan!.id, period: 'monthly' })
+      .send({ planId: plan!.id, period: 'monthly', acceptedTerms: true })
       .expect(201);
 
     const body = res.body as {
@@ -102,6 +126,13 @@ describe('Pasarela de pagos (Fase 5.1, e2e)', () => {
     expect(body.order.status).toBe('pending');
     expect(body.order.provider).toBe('manual');
     expect(body.order.checkoutUrl).toBeNull();
+
+    // Prueba de aceptación de la compra (Términos + Política de Reembolsos).
+    const consent = await prisma.consentLog.findFirst({
+      where: { userId, type: 'subscription' },
+      orderBy: { id: 'desc' },
+    });
+    expect(consent).not.toBeNull();
   });
 
   it('POST /webhooks/payments/pabilo con firma inválida → 401', async () => {

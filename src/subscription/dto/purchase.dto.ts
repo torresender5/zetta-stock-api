@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, ApiSchema } from '@nestjs/swagger';
-import { IsIn, IsInt, IsOptional } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional } from 'class-validator';
 import { SUBSCRIPTION_PERIODS } from '../subscription.constant';
 import { PAYMENT_PROVIDERS } from 'src/payment/payment.constant';
 
@@ -24,4 +24,14 @@ export class PurchaseSubscriptionDto {
   @IsOptional()
   @IsIn(PAYMENT_PROVIDERS)
   provider?: 'stripe' | 'pabilo' | 'manual';
+
+  @ApiPropertyOptional({
+    description:
+      'Aceptación de los Términos y Condiciones y la Política de Reembolsos. ' +
+      'Obligatorio para planes de pago (se registra en ConsentLog); los planes ' +
+      'gratuitos no generan cargo y no lo exigen.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  acceptedTerms?: boolean;
 }

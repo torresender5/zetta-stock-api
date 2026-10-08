@@ -1,5 +1,6 @@
 import { ApiProperty, ApiSchema } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEmail, IsJSON } from 'class-validator';
+import { IsString, IsEmail, IsJSON, IsIn } from 'class-validator';
+import { ALLOWED_MAIL_TEMPLATES } from '../mail.constant';
 
 @ApiSchema({ name: 'Mail' })
 export class SendEmailDto {
@@ -11,7 +12,11 @@ export class SendEmailDto {
   @IsString()
   subject: string;
 
-  @ApiProperty({ description: 'Template Path' })
+  @ApiProperty({
+    description: 'Template Path (solo plantillas permitidas)',
+    enum: [...ALLOWED_MAIL_TEMPLATES],
+  })
+  @IsIn([...ALLOWED_MAIL_TEMPLATES])
   @IsString()
   templatePath: string;
 

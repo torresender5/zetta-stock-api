@@ -17,6 +17,14 @@ import { CreatePlanDto, UpdatePlanDto } from './dto/plan.dto';
 import { PurchaseSubscriptionDto } from './dto/purchase.dto';
 import { settlePaymentOrder } from '../payment/order-fulfillment';
 import { PaymentService } from '../payment/payment.service';
+import { LEGAL_TERMS_VERSION } from 'src/auth/auth.constant';
+
+/** Meta de la aceptación legal que acompaña a una compra (Ley OPDP 1733). */
+export interface PurchaseConsent {
+  userId?: number;
+  ip?: string | null;
+  userAgent?: string | null;
+}
 
 interface PlanRecord {
   id: number;
@@ -180,6 +188,7 @@ export class SubscriptionService {
   async purchase(
     companyId: number,
     dto: PurchaseSubscriptionDto,
+    consent?: PurchaseConsent,
   ): Promise<{
     subscription: SerializedSubscription | null;
     order: SerializedPaymentOrder | null;
@@ -195,6 +204,14 @@ export class SubscriptionService {
     }
     const amount =
       dto.period === 'yearly' ? plan.priceYearly : plan.priceMonthly;
+
+    // Prueba de aceptación: los planes de pago exigen los Términos y la
+    // Política de Reembolsos; los gratuitos no generan cargo ni reembolso.
+    if (amount > 0 && dto.acceptedTerms !== true) {
+      throw new BadRequestException(
+        'Debes aceptar los Términos y Condiciones y la Política de Reembolsos para contratar un plan de pago.',
+      );
+    }
 
     const current = await this.prisma.subscription.findUnique({
       where: { companyId },
@@ -244,6 +261,10 @@ export class SubscriptionService {
       }
     }
 
+    // Prueba de aceptación registrada antes de crear la orden: si falla, no
+    // queda una orden huérfana sin constancia del consentimiento.
+    await this.recordPurchaseConsent(consent);
+
     const order = await this.prisma.paymentOrder.create({
       data: {
         companyId,
@@ -280,6 +301,25 @@ export class SubscriptionService {
       subscription: current ? serializeSubscription(current) : null,
       order: { ...serializeOrder(order), checkoutUrl },
     };
+  }
+
+  /** Guarda la aceptación de Términos/Reembolsos de una compra de pago. */
+  private async recordPurchaseConsent(
+    consent?: PurchaseConsent,
+  ): Promise<void> {
+    if (!consent?.userId) return;
+    await this.prisma.consentLog.create({
+      data: {
+        userId: consent.userId,
+        type: 'subscription',
+        version: LEGAL_TERMS_VERSION,
+        ip: consent.ip ?? null,
+        userAgent: consent.userAgent ?? null,
+      },
+    });
+    this.logger.info(
+      `Consentimiento de compra registrado para el usuario ${consent.userId}`,
+    );
   }
 
   /** Superadmin confirma el pago de una orden y activa la suscripción. */

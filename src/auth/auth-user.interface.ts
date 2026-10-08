@@ -15,4 +15,6 @@ export interface AuthUserPayload {
   planName?: string | null;
   subscriptionStatus?: string | null;
   subscriptionExpiresAt?: string | null;
+  /** true cuando el usuario aún no aceptó los documentos legales. */
+  requiresLegalAcceptance?: boolean;
 }

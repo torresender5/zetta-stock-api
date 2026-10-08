@@ -1,5 +1,6 @@
 import { MailerService } from '@nestjs-modules/mailer';
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { isAllowedMailTemplate } from './mail.constant';
 
 @Injectable()
 export class MailService {
@@ -11,7 +12,10 @@ export class MailService {
     templatePath: string,
     context: object,
   ) {
-    // const url = `example.com/auth/confirm?token=${token}`;
+    // Ninguna ruta de plantilla arbitraria (Fase 4 del PLAN_LEGAL.md).
+    if (!isAllowedMailTemplate(templatePath)) {
+      throw new BadRequestException('Plantilla de correo no permitida.');
+    }
 
     await this.mailerService.sendMail({
       to: email,

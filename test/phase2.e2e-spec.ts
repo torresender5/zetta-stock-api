@@ -55,6 +55,9 @@ describe('Fase 2 — CRUD (compras, categorías, ventas)', () => {
         email,
         password: 'test1234',
         accountType: 'PERSONA',
+        acceptTerms: true,
+        acceptPrivacy: true,
+        over18: true,
       })
       .expect(200);
     const login = await request(app.getHttpServer())

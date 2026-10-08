@@ -8,7 +8,8 @@ export type NotificationType =
   | 'apartado_due'
   | 'subscription_expiring'
   | 'subscription_expired'
-  | 'cash_open';
+  | 'cash_open'
+  | 'ticket_reply';
 
 export interface NotifyInput {
   companyId?: number | null;

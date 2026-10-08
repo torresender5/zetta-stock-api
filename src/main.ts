@@ -6,6 +6,7 @@ import { AppModule } from './app.module';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { WinstonModule } from 'nest-winston';
 import { winstonConfig } from './config/winston.config';
+import { securityHeaders } from './config/security';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -14,6 +15,8 @@ async function bootstrap() {
     // (Stripe y Pabilo). Ver src/payment/payment-webhook.controller.ts.
     rawBody: true,
   });
+  // Cabeceras de seguridad HTTP globales (CSP, HSTS, X-Frame-Options...).
+  app.use(securityHeaders);
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true, // Remove properties not defined in the DTO
@@ -36,21 +39,24 @@ async function bootstrap() {
     credentials: true, // Allow sending cookies and authorization headers
   });
 
-  // await app.listen(3000); // Or
-  // Use DocumentBuilder to create a new Swagger document configuration
-  const config = new DocumentBuilder()
-    .setTitle('zettastock API') // Set the title of the API
-    .setDescription('Api Nestjs') // Set the description of the API
-    .setVersion('0.1') // Set the version of the API
-    .addBearerAuth() // JWT auth
-    .addBasicAuth() // Basic auth (UserAdmin)
-    .build(); // Build the document
+  // Swagger solo si se habilita explícitamente con SWAGGER_ENABLED=true:
+  // publicar el esquema completo de la API en producción no es deseable
+  // (Fase 4 del PLAN_LEGAL.md).
+  if (process.env.SWAGGER_ENABLED === 'true') {
+    const config = new DocumentBuilder()
+      .setTitle('zettastock API') // Set the title of the API
+      .setDescription('Api Nestjs') // Set the description of the API
+      .setVersion('0.1') // Set the version of the API
+      .addBearerAuth() // JWT auth
+      .addBasicAuth() // Basic auth (UserAdmin)
+      .build(); // Build the document
 
-  // Create a Swagger document using the application instance and the document configuration
-  const document = SwaggerModule.createDocument(app, config);
+    // Create a Swagger document using the application instance and the document configuration
+    const document = SwaggerModule.createDocument(app, config);
 
-  // Setup Swagger module with the application instance and the Swagger document
-  SwaggerModule.setup('swagger', app, document);
+    // Setup Swagger module with the application instance and the Swagger document
+    SwaggerModule.setup('swagger', app, document);
+  }
 
   await app.listen(process.env.PORT ?? 3000);
 }

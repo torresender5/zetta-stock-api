@@ -54,6 +54,9 @@ describe('Fase 3 — Facturación y rendimiento', () => {
         email,
         password: 'test1234',
         accountType: 'PERSONA',
+        acceptTerms: true,
+        acceptPrivacy: true,
+        over18: true,
       })
       .expect(200);
 
@@ -162,6 +165,9 @@ describe('Fase 3 — Facturación y rendimiento', () => {
         email: emailFree,
         password: 'test1234',
         accountType: 'PERSONA',
+        acceptTerms: true,
+        acceptPrivacy: true,
+        over18: true,
       })
       .expect(200);
     const login = await request(app.getHttpServer())

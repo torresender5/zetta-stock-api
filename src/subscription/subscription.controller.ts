@@ -54,7 +54,13 @@ export class SubscriptionController {
       throw new ForbiddenException('Sin empresa asociada');
     }
     this.logger.info('Iniciando compra de suscripción');
-    return this.subscriptionService.purchase(req.user.companyId, dto);
+    // Solo un JWT de tenant llega hasta aquí (Basic Auth no trae companyId),
+    // así que req.user.sub siempre es un id de la tabla User.
+    return this.subscriptionService.purchase(req.user.companyId, dto, {
+      userId: req.user.sub,
+      ip: req.ip ?? null,
+      userAgent: req.headers['user-agent'] ?? null,
+    });
   }
 
   @Auth()

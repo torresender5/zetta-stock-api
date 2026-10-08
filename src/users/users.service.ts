@@ -7,12 +7,13 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import { Users, SafeUser } from './interface/user.interface';
+import { Users, SafeUser, ConsentMeta } from './interface/user.interface';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { R2Service } from 'src/r2/r2.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 import { UserRole } from './dto/user.dto';
+import { LEGAL_TERMS_VERSION } from 'src/auth/auth.constant';
 
 const USER_SAFE_SELECT = {
   id: true,
@@ -184,18 +185,22 @@ export class UsersService {
     await this.prisma.user.delete({ where: { id: userId } });
   }
 
-  async createUserWithCompany(data: {
-    user: string;
-    email: string;
-    password: string;
-    companyData: {
-      name: string;
-      kind: string;
-      document?: string | null;
-      phoneNumber?: string | null;
-      address?: string | null;
-    };
-  }) {
+  async createUserWithCompany(
+    data: {
+      user: string;
+      email: string;
+      password: string;
+      companyData: {
+        name: string;
+        kind: string;
+        document?: string | null;
+        phoneNumber?: string | null;
+        address?: string | null;
+      };
+    },
+    consent?: ConsentMeta,
+  ) {
+    const acceptedAt = new Date();
     return this.prisma.$transaction(async (tx) => {
       const company = await tx.company.create({ data: data.companyData });
       const user = await tx.user.create({
@@ -205,8 +210,19 @@ export class UsersService {
           password: data.password,
           role: 'admin',
           companyId: company.id,
+          // Consentimiento legal validado en AuthService.register (Fase 1).
+          acceptedTerms: true,
+          termsVersion: LEGAL_TERMS_VERSION,
+          acceptedAt,
         },
       });
+      await this.createConsentLogs(
+        tx,
+        user.id,
+        ['terms', 'privacy'],
+        acceptedAt,
+        consent,
+      );
       // Todo registro nuevo inicia con el plan gratuito (prueba).
       const freePlan = await tx.plan.findUnique({ where: { key: 'free' } });
       if (freePlan) {
@@ -226,6 +242,68 @@ export class UsersService {
       }
       return user;
     });
+  }
+
+  /** Deja la prueba del consentimiento legal en la tabla ConsentLog. */
+  private async createConsentLogs(
+    tx: Prisma.TransactionClient,
+    userId: number,
+    types: string[],
+    acceptedAt: Date,
+    consent?: ConsentMeta,
+  ): Promise<void> {
+    if (types.length === 0) return;
+    await tx.consentLog.createMany({
+      data: types.map((type) => ({
+        userId,
+        type,
+        version: LEGAL_TERMS_VERSION,
+        acceptedAt,
+        ip: consent?.ip ?? null,
+        userAgent: consent?.userAgent ?? null,
+      })),
+    });
+  }
+
+  /**
+   * Registra la aceptación de los documentos legales de un usuario que aún no
+   * los tenía (subcuentas creadas por el admin) y devuelve el usuario con su
+   * empresa para reconstruir el JWT.
+   */
+  async recordLegalAcceptance(
+    userId: number,
+    consent?: ConsentMeta,
+  ): Promise<Users | undefined | null> {
+    const acceptedAt = new Date();
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            acceptedTerms: true,
+            termsVersion: LEGAL_TERMS_VERSION,
+            acceptedAt,
+          },
+        });
+        await this.createConsentLogs(
+          tx,
+          userId,
+          ['terms', 'privacy'],
+          acceptedAt,
+          consent,
+        );
+      });
+    } catch (error) {
+      // P2025: el id no corresponde a un User (p. ej. un UserAdmin por Basic).
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        return null;
+      }
+      throw error;
+    }
+    return this.findByIdWithCompany(userId);
   }
 
   async findByEmail(
