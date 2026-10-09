@@ -57,7 +57,7 @@ export class UsersService {
     this.logger.info('Starting findAllUsers function');
     return this.prisma.user
       .findMany({
-        where: companyId ? { companyId } : {},
+        where: { ...(companyId ? { companyId } : {}), isDeleted: false },
         select: USER_SAFE_SELECT,
       })
       .then((rows) => rows.map(toSafeUser));
@@ -71,7 +71,7 @@ export class UsersService {
     const rows = await this.prisma.user.findMany({
       skip,
       take,
-      where: companyId ? { companyId } : {},
+      where: { ...(companyId ? { companyId } : {}), isDeleted: false },
       select: USER_SAFE_SELECT,
     });
     return rows.map(toSafeUser);
@@ -94,7 +94,7 @@ export class UsersService {
     });
     if (subscription?.plan?.maxUsers) {
       const currentCount = await this.prisma.user.count({
-        where: { companyId: data.companyId },
+        where: { companyId: data.companyId, isDeleted: false },
       });
       if (currentCount >= subscription.plan.maxUsers) {
         throw new BadRequestException(
@@ -182,7 +182,11 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('Usuario no encontrado');
     }
-    await this.prisma.user.delete({ where: { id: userId } });
+    // Baja lógica: se desactiva y marca como eliminado, nunca se borra el registro
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { active: false, isDeleted: true },
+    });
   }
 
   async createUserWithCompany(
@@ -328,6 +332,7 @@ export class UsersService {
     const row = await this.prisma.user.findFirst({
       where: {
         email,
+        isDeleted: false,
         ...(companyId ? { companyId } : {}),
       },
       select: USER_SAFE_SELECT,
@@ -364,6 +369,7 @@ export class UsersService {
     return this.prisma.user.findFirst({
       where: {
         id,
+        isDeleted: false,
         ...(companyId ? { companyId } : {}),
       },
     });
@@ -376,6 +382,7 @@ export class UsersService {
     const user = await this.prisma.user.findFirst({
       where: {
         id,
+        isDeleted: false,
         ...(companyId ? { companyId } : {}),
       },
       include: { company: true },

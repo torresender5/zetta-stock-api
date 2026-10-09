@@ -17,6 +17,7 @@ model Product {
   stock         Int
   minStock      Int            @default(0) // Stock mínimo: <= stock && > 0 genera alertas de stock bajo
   sku           String
+  barcode       String? // Código de barras escaneado (EAN/UPC/Code128), opcional
   type          String
   category      String
   categoryId    Int?
@@ -28,4 +29,6 @@ model Product {
   saleItems     SaleItem[]
   purchaseItems PurchaseItem[]
   apartadoItems ApartadoItem[]
+
+  @@index([companyId, barcode])
 }

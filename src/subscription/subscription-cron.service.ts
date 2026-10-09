@@ -29,7 +29,11 @@ export class SubscriptionCronService {
       },
       include: {
         plan: true,
-        company: { include: { users: { where: { role: 'admin' } } } },
+        company: {
+          include: {
+            users: { where: { role: 'admin', isDeleted: false } },
+          },
+        },
       },
     });
     for (const sub of expiredSubs) {
@@ -93,7 +97,9 @@ export class SubscriptionCronService {
       include: {
         plan: true,
         company: {
-          include: { users: { where: { role: 'admin' } } },
+          include: {
+            users: { where: { role: 'admin', isDeleted: false } },
+          },
         },
       },
     });

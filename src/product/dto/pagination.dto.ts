@@ -25,7 +25,7 @@ export class PaginationQueryDto {
   @Max(100)
   limit?: number = 10;
 
-  @ApiPropertyOptional({ description: 'Search by name, sku or code' })
+  @ApiPropertyOptional({ description: 'Search by name, sku, code or barcode' })
   @IsOptional()
   @IsString()
   search?: string;

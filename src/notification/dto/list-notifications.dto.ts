@@ -1,6 +1,6 @@
 import { ApiPropertyOptional, ApiSchema } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, Min } from 'class-validator';
 
 @ApiSchema({ name: 'ListNotifications' })
 export class ListNotificationsQueryDto {
@@ -23,4 +23,15 @@ export class ListNotificationsQueryDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   unread?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Alcance: "general" excluye las de tickets, "tickets" solo las de ' +
+      'tickets (ticket_reply), "all" muestra todo',
+    enum: ['all', 'general', 'tickets'],
+    default: 'all',
+  })
+  @IsOptional()
+  @IsIn(['all', 'general', 'tickets'])
+  scope?: 'all' | 'general' | 'tickets';
 }

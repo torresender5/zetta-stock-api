@@ -56,6 +56,16 @@ export class ProductController {
     return this.productService.findAll(query, req.user?.companyId);
   }
   @AuthRoles('admin', 'vendedor', 'inventario')
+  @Get('barcode/:code')
+  findByBarcode(
+    @Param('code') code: string,
+    @Req() req: Request & { user: AuthUserPayload },
+  ) {
+    this.logger.info(`Starting ProductController find By Barcode: ${code}`);
+    return this.productService.findByBarcode(code, req.user?.companyId);
+  }
+
+  @AuthRoles('admin', 'vendedor', 'inventario')
   @Get(':id')
   findOne(
     @Param('id') id: string,

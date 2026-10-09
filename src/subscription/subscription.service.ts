@@ -456,7 +456,11 @@ export class SubscriptionService {
     const rows = await this.prisma.subscription.findMany({
       include: {
         plan: true,
-        company: { include: { users: { select: { role: true } } } },
+        company: {
+          include: {
+            users: { select: { role: true }, where: { isDeleted: false } },
+          },
+        },
       },
       orderBy: { updatedAt: 'desc' },
     });

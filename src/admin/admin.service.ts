@@ -67,7 +67,7 @@ export class AdminService {
       this.prisma.company.count({
         where: { createdAt: { gte: thirtyDaysAgo } },
       }),
-      this.prisma.user.count(),
+      this.prisma.user.count({ where: { isDeleted: false } }),
       this.prisma.subscription.findMany({
         include: { plan: true },
         orderBy: { updatedAt: 'desc' },
@@ -273,6 +273,7 @@ export class AdminService {
             active: true,
             createdAt: true,
           },
+          where: { isDeleted: false },
           orderBy: { createdAt: 'desc' },
         },
         subscription: { include: { plan: true } },
@@ -332,19 +333,22 @@ export class AdminService {
 
   async users(search?: string) {
     const rows = await this.prisma.user.findMany({
-      where: search
-        ? {
-            OR: [
-              { user: { contains: search, mode: 'insensitive' } },
-              { email: { contains: search, mode: 'insensitive' } },
-              {
-                company: {
-                  name: { contains: search, mode: 'insensitive' },
+      where: {
+        isDeleted: false,
+        ...(search
+          ? {
+              OR: [
+                { user: { contains: search, mode: 'insensitive' } },
+                { email: { contains: search, mode: 'insensitive' } },
+                {
+                  company: {
+                    name: { contains: search, mode: 'insensitive' },
+                  },
                 },
-              },
-            ],
-          }
-        : undefined,
+              ],
+            }
+          : {}),
+      },
       include: { company: { select: { id: true, name: true, active: true } } },
       orderBy: { createdAt: 'desc' },
       take: 200,

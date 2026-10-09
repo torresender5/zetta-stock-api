@@ -33,10 +33,11 @@ export class NotificationController {
     @Req() req: Request & { user: AuthUserPayload },
   ) {
     this.logger.info('Starting NotificationController list');
-    return this.notifications.list(req.user?.companyId, {
+    return this.notifications.list(req.user?.companyId, req.user?.sub, {
       page: query.page,
       limit: query.limit,
       unread: query.unread,
+      scope: query.scope,
     });
   }
 
@@ -45,7 +46,7 @@ export class NotificationController {
   @Patch('read-all')
   markAllRead(@Req() req: Request & { user: AuthUserPayload }) {
     this.logger.info('Starting NotificationController mark all read');
-    return this.notifications.markAllRead(req.user?.companyId);
+    return this.notifications.markAllRead(req.user?.companyId, req.user?.sub);
   }
 
   @Auth()
@@ -56,6 +57,6 @@ export class NotificationController {
     @Req() req: Request & { user: AuthUserPayload },
   ) {
     this.logger.info(`Starting NotificationController mark read: ${id}`);
-    return this.notifications.markRead(id, req.user?.companyId);
+    return this.notifications.markRead(id, req.user?.companyId, req.user?.sub);
   }
 }

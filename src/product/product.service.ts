@@ -1,4 +1,9 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
@@ -27,6 +32,7 @@ export class ProductService {
         { name: { contains: query.search, mode: 'insensitive' } },
         { sku: { contains: query.search, mode: 'insensitive' } },
         { code: { contains: query.search, mode: 'insensitive' } },
+        { barcode: { contains: query.search, mode: 'insensitive' } },
       ];
     }
     if (query.category) {
@@ -86,6 +92,69 @@ export class ProductService {
   }
 
   /**
+   * Lookup exacto por código de barras (para escáner). Lanza 404 si no existe.
+   */
+  async findByBarcode(code: string, companyId?: number) {
+    const barcode = (code ?? '').trim();
+    this.logger.info(`Finding product by barcode: ${barcode}`);
+    if (!barcode) {
+      throw new BadRequestException('Código de barras vacío');
+    }
+    try {
+      const result = await this.productPrisma.product.findFirst({
+        where: {
+          barcode,
+          ...(companyId ? { companyId } : {}),
+        },
+      });
+      if (!result) {
+        throw new NotFoundException(
+          'Producto no encontrado por código de barras',
+        );
+      }
+      return result;
+    } catch (error) {
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      this.logger.error(`Error finding product by barcode ${barcode}:`, error);
+      throw error;
+    }
+  }
+
+  /** Normaliza el barcode: cadena vacía o en blanco → null. */
+  private normalizeBarcode(value: unknown): string | null {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed === '' ? null : trimmed;
+  }
+
+  /** El barcode debe ser único dentro de la empresa. */
+  private async assertBarcodeUnique(
+    barcode: string | null,
+    companyId?: number,
+    excludeId?: number,
+  ) {
+    if (!barcode) return;
+    const duplicate = await this.productPrisma.product.findFirst({
+      where: {
+        barcode,
+        ...(companyId ? { companyId } : {}),
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true, name: true },
+    });
+    if (duplicate) {
+      throw new BadRequestException(
+        'Código de barras ya registrado en otro producto',
+      );
+    }
+  }
+
+  /**
    * Resuelve la categoría del producto: si llega categoryId se valida contra
    * Category (tenant) y el nombre denormalizado se sincroniza con la categoría;
    * si solo llega el nombre se intenta enlazar con la categoría existente.
@@ -136,6 +205,10 @@ export class ProductService {
         salePrice: Number(data.salePrice),
         stock: Number(data.stock),
       };
+      const rawBarcode = (data as { barcode?: unknown }).barcode;
+      const barcode = this.normalizeBarcode(rawBarcode);
+      createData.barcode = barcode;
+      await this.assertBarcodeUnique(barcode, companyId);
       if (typeof data.sizes === 'string') {
         createData.sizes = JSON.parse(data.sizes);
       }
@@ -173,6 +246,12 @@ export class ProductService {
       if (data.salePrice !== undefined)
         updateData.salePrice = Number(data.salePrice);
       if (data.stock !== undefined) updateData.stock = Number(data.stock);
+      const rawBarcode = (data as { barcode?: unknown }).barcode;
+      if (rawBarcode !== undefined) {
+        const barcode = this.normalizeBarcode(rawBarcode);
+        updateData.barcode = barcode;
+        await this.assertBarcodeUnique(barcode, companyId, product.id);
+      }
       if (data.sizes !== undefined && typeof data.sizes === 'string') {
         updateData.sizes = JSON.parse(data.sizes);
       }

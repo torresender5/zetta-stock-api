@@ -3,13 +3,16 @@ model Notification {
   companyId Int
   company   Company   @relation(fields: [companyId], references: [id])
   userId    Int? // Destinatario concreto (opcional: null = toda la empresa)
-  type      String // stock_low | apartado_due | subscription_expiring | subscription_expired | cash_open | ticket_reply
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type      String // stock_low | apartado_due | subscription_expiring | subscription_expired | cash_open | ticket_reply | announcement
   title     String
   body      String?
+  targetLabel String? // Alcance legible del fan-out (solo anuncios del superadmin)
   dedupeKey String? // Evita duplicados mientras la notificación siga sin leer
   readAt    DateTime?
   createdAt DateTime  @default(now())
 
   @@index([companyId, readAt])
   @@index([companyId, dedupeKey])
+  @@index([companyId, userId])
 }

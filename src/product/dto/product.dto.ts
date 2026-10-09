@@ -64,6 +64,14 @@ export class ProductCreateDto {
   @IsString()
   sku: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Código de barras escaneado (EAN/UPC/Code128). Debe ser único por empresa',
+  })
+  @IsOptional()
+  @IsString()
+  barcode?: string;
+
   @ApiProperty({ description: 'Product Type' })
   @IsString()
   type: string;

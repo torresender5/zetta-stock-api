@@ -5,6 +5,8 @@ model User {
   password  String
   role      String   @default("admin") // admin | vendedor | inventario
   active    Boolean  @default(true)
+  // Baja lógica (soft-delete): true = "eliminado" desde el front, nunca se borra el registro
+  isDeleted Boolean  @default(false) @map("is_deleted")
   createdAt DateTime @default(now())
   companyId Int?
   company   Company? @relation(fields: [companyId], references: [id])
@@ -15,6 +17,7 @@ model User {
   acceptedAt    DateTime?
   consentLogs   ConsentLog[]
   dataSubjectRequests DataSubjectRequest[]
+  notifications Notification[]
 }
 
 // Prueba de aceptación de cada documento legal (Términos, Privacidad, etc.).
