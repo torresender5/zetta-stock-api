@@ -9,6 +9,7 @@ import {
   Query,
   Inject,
   Req,
+  ForbiddenException,
 } from '@nestjs/common';
 import { AuthRoles } from '../auth/auth-roles.decorator';
 import { AuthUserPayload } from '../auth/auth-user.interface';
@@ -29,13 +30,25 @@ export class CashRegisterController {
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
   ) {}
 
+  /**
+   * La caja siempre pertenece a una empresa: sin companyId no hay tenant y no
+   * se debe leer ni escribir ninguna caja (evita fugas entre companies).
+   */
+  private requireCompanyId(req: Request & { user?: AuthUserPayload }): number {
+    const companyId = req.user?.companyId;
+    if (!companyId) {
+      throw new ForbiddenException('Usuario sin empresa asociada');
+    }
+    return companyId;
+  }
+
   @AuthRoles('admin', 'vendedor')
   @Get('active')
   findActive(@Req() req: Request & { user: AuthUserPayload }) {
     this.logger.info('Starting CashRegisterController find active');
     return this.cashRegisterService.findActive(
       req.user.sub,
-      req.user?.companyId,
+      this.requireCompanyId(req),
     );
   }
 
@@ -47,7 +60,7 @@ export class CashRegisterController {
   ) {
     this.logger.info('Starting CashRegisterController find all');
     return this.cashRegisterService.findAll(
-      req.user?.companyId,
+      this.requireCompanyId(req),
       query.status,
       query.page ?? 1,
       query.limit ?? 20,
@@ -66,7 +79,7 @@ export class CashRegisterController {
     );
     return this.cashRegisterService.findById(
       cashRegisterId,
-      req.user?.companyId,
+      this.requireCompanyId(req),
     );
   }
 
@@ -80,7 +93,7 @@ export class CashRegisterController {
     return this.cashRegisterService.open(
       req.user.sub,
       data,
-      req.user?.companyId,
+      this.requireCompanyId(req),
     );
   }
 
@@ -99,7 +112,7 @@ export class CashRegisterController {
     return this.cashRegisterService.addMovement(
       cashRegisterId,
       data,
-      req.user?.companyId,
+      this.requireCompanyId(req),
     );
   }
 
@@ -123,7 +136,7 @@ export class CashRegisterController {
         transfer: data.transfer ?? 0,
         credit: data.credit ?? 0,
       },
-      req.user?.companyId,
+      this.requireCompanyId(req),
     );
   }
 
@@ -139,7 +152,7 @@ export class CashRegisterController {
     );
     return this.cashRegisterService.getSummary(
       cashRegisterId,
-      req.user?.companyId,
+      this.requireCompanyId(req),
     );
   }
 }

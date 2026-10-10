@@ -352,6 +352,7 @@ const seedPlansData: SeedPlan[] = [
     ],
     allowedViews: [
       'dashboard',
+      'caja',
       'products',
       'clients',
       'suppliers',

@@ -18,10 +18,10 @@ export class CashRegisterService {
     private notifications: NotificationService,
   ) {}
 
-  async findAll(companyId?: number, status?: string, page = 1, limit = 20) {
+  async findAll(companyId: number, status?: string, page = 1, limit = 20) {
     this.logger.info('Starting CashRegisterService findAll');
     const where = {
-      ...(companyId ? { companyId } : {}),
+      companyId,
       ...(status ? { status } : {}),
     };
     try {
@@ -54,11 +54,11 @@ export class CashRegisterService {
     }
   }
 
-  async findById(id: number, companyId?: number) {
+  async findById(id: number, companyId: number) {
     this.logger.info(`Finding cash register by ID: ${id}`);
     try {
       const result = await this.prisma.cashRegister.findFirst({
-        where: { id, ...(companyId ? { companyId } : {}) },
+        where: { id, companyId },
         include: {
           user: true,
           movements: { orderBy: { createdAt: 'desc' } },
@@ -78,38 +78,26 @@ export class CashRegisterService {
     }
   }
 
-  async findActive(userId?: number, companyId?: number) {
+  async findActive(userId: number, companyId: number) {
     this.logger.info('Finding active cash register');
     return this.prisma.cashRegister.findFirst({
       where: {
         status: 'open',
-        ...(companyId ? { companyId } : {}),
-        ...(userId ? { userId } : {}),
+        companyId,
+        userId,
       },
       include: { user: true },
       orderBy: { openedAt: 'desc' },
     });
   }
 
-  async open(userId: number, data: OpenCashRegisterDto, companyId?: number) {
+  async open(userId: number, data: OpenCashRegisterDto, companyId: number) {
     this.logger.info('Opening cash register', {
       userId,
+      companyId,
       baseAmount: data.baseAmount,
     });
     try {
-      const existing = await this.prisma.cashRegister.findFirst({
-        where: {
-          status: 'open',
-          ...(companyId ? { companyId } : {}),
-          userId,
-        },
-      });
-      if (existing) {
-        throw new BadRequestException(
-          'Ya existe una caja abierta para este usuario',
-        );
-      }
-
       const name =
         data.name ||
         `Caja ${new Date().toLocaleDateString('es-CO', {
@@ -119,6 +107,18 @@ export class CashRegisterService {
         })}`;
 
       const register = await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.cashRegister.findFirst({
+          where: {
+            status: 'open',
+            companyId,
+            userId,
+          },
+        });
+        if (existing) {
+          throw new BadRequestException(
+            'Ya existe una caja abierta para este usuario',
+          );
+        }
         const fxRate = Number(data.fxRate) > 0 ? Number(data.fxRate) : null;
         const created = await tx.cashRegister.create({
           data: {
@@ -169,12 +169,12 @@ export class CashRegisterService {
   async addMovement(
     id: number,
     data: CreateCashMovementDto,
-    companyId?: number,
+    companyId: number,
   ) {
     this.logger.info(`Adding movement to cash register: ${id}`);
     try {
       const register = await this.prisma.cashRegister.findFirst({
-        where: { id, ...(companyId ? { companyId } : {}) },
+        where: { id, companyId },
       });
       if (!register) {
         throw new NotFoundException('Caja no encontrada');
@@ -208,12 +208,12 @@ export class CashRegisterService {
   async close(
     id: number,
     countedByMethod: Record<string, number>,
-    companyId?: number,
+    companyId: number,
   ) {
     this.logger.info(`Closing cash register: ${id}`);
     try {
       const register = await this.prisma.cashRegister.findFirst({
-        where: { id, ...(companyId ? { companyId } : {}) },
+        where: { id, companyId },
         include: { movements: true },
       });
       if (!register) {
@@ -277,11 +277,11 @@ export class CashRegisterService {
     }
   }
 
-  async getSummary(id: number, companyId?: number) {
+  async getSummary(id: number, companyId: number) {
     this.logger.info(`Getting summary for cash register: ${id}`);
     try {
       const register = await this.prisma.cashRegister.findFirst({
-        where: { id, ...(companyId ? { companyId } : {}) },
+        where: { id, companyId },
         include: { movements: true },
       });
       if (!register) {

@@ -15,6 +15,7 @@ export const TRIAL_END_WARNING_DAYS = 7;
 export const PLAN_DEFAULT_VIEWS: Record<string, string[]> = {
   free: [
     'dashboard',
+    'caja',
     'products',
     'clients',
     'suppliers',

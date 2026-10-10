@@ -55,6 +55,20 @@ describe('CashRegisterService', () => {
     service = module.get<CashRegisterService>(CashRegisterService);
   });
 
+  describe('findActive', () => {
+    it('always scopes the query by companyId and userId', async () => {
+      prisma.cashRegister.findFirst.mockResolvedValue(null);
+
+      await service.findActive(7, 3);
+
+      expect(prisma.cashRegister.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: 'open', companyId: 3, userId: 7 },
+        }),
+      );
+    });
+  });
+
   describe('open', () => {
     it('creates the register and an opening movement', async () => {
       prisma.cashRegister.findFirst.mockResolvedValue(null);
